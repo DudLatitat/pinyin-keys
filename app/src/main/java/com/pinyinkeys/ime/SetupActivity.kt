@@ -158,7 +158,10 @@ class SetupActivity : ComponentActivity() {
                             })
                         }
                         Text(
-                            "Needs photo access. Only a screenshot from the last minute is looked at.",
+                            if (Screenshots.hasLimitedAccessOnly(this@SetupActivity))
+                                "Photo access is set to \"selected photos\", which doesn't include new " +
+                                    "screenshots. Allow all photos for Pinyin Keys in Android's app settings."
+                            else "Needs photo access. Only a screenshot from the last two minutes is looked at.",
                             style = MaterialTheme.typography.bodySmall,
                         )
                         Text(

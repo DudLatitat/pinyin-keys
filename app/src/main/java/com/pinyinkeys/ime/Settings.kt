@@ -75,6 +75,11 @@ class Settings(context: Context) {
         get() = readList("pinned_clips")
         set(v) = writeList("pinned_clips", v)
 
+    /** Words the user wants kept as typed (never autocorrected). */
+    var userWords: List<String>
+        get() = readList("user_words")
+        set(v) = writeList("user_words", v)
+
     /** Text the user pasted with this keyboard (newest first). Encrypted, on the phone only. */
     var clipHistory: List<String>
         get() = readList("clip_history")

@@ -21,8 +21,15 @@ object Screenshots {
     fun hasPermission(context: Context) =
         context.checkSelfPermission(permission) == PackageManager.PERMISSION_GRANTED
 
+    /**
+     * Android 14+ lets you allow only "selected photos". New screenshots aren't included
+     * then, so the settings screen warns about it.
+     */
+    fun hasLimitedAccessOnly(context: Context) = Build.VERSION.SDK_INT >= 34 && !hasPermission(context) &&
+        context.checkSelfPermission("android.permission.READ_MEDIA_VISUAL_USER_SELECTED") == PackageManager.PERMISSION_GRANTED
+
     /** Newest screenshot added within [maxAgeMs], or null. */
-    fun recent(context: Context, maxAgeMs: Long = 60_000): Uri? {
+    fun recent(context: Context, maxAgeMs: Long = 120_000): Uri? {
         if (!hasPermission(context)) return null
         val since = (System.currentTimeMillis() - maxAgeMs) / 1000  // DATE_ADDED is in seconds
         val collection = MediaStore.Images.Media.EXTERNAL_CONTENT_URI
@@ -32,8 +39,11 @@ object Screenshots {
             context.contentResolver.query(
                 collection,
                 arrayOf(MediaStore.Images.Media._ID),
-                "${MediaStore.Images.Media.DATE_ADDED} >= ? AND $folder LIKE ?",
-                arrayOf(since.toString(), "%Screenshots%"),
+                // Phones name the folder differently ("Screenshots", "DCIM/Screenshots", ...),
+                // so match either the path or the album name.
+                "${MediaStore.Images.Media.DATE_ADDED} >= ? AND ($folder LIKE ? OR " +
+                    "${MediaStore.Images.Media.BUCKET_DISPLAY_NAME} LIKE ?)",
+                arrayOf(since.toString(), "%Screenshot%", "%Screenshot%"),
                 "${MediaStore.Images.Media.DATE_ADDED} DESC",
             )?.use { c ->
                 if (c.moveToFirst()) ContentUris.withAppendedId(collection, c.getLong(0)) else null

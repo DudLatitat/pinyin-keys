@@ -208,7 +208,11 @@ class PinyinKeysService : InputMethodService(),
         checkRecentScreenshot()
         resetWord()
         if (english == null) lifecycleScope.launch {
-            english = withContext(Dispatchers.IO) { EnglishDictionary.get(this@PinyinKeysService) }
+            english = withContext(Dispatchers.IO) {
+                EnglishDictionary.get(this@PinyinKeysService).also {
+                    it.userWords = Settings(this@PinyinKeysService).userWords.toSet()
+                }
+            }
         }
         if (nextWords == null) lifecycleScope.launch {
             nextWords = withContext(Dispatchers.IO) { NextWords(this@PinyinKeysService).also { it.load() } }
@@ -289,6 +293,7 @@ class PinyinKeysService : InputMethodService(),
             updateSuggestions()
             return
         }
+        suggestJob?.cancel()
         // Anything else ends the word: maybe autocorrect it, then learn it.
         finishWord(ic, autocorrectOnly = c != null && (c == ' ' || c in ".,?!"))
         if (c != null && c in ".?!") prevWord = ""  // new sentence
@@ -331,6 +336,7 @@ class PinyinKeysService : InputMethodService(),
             if (before == "$corrected ") {
                 ic.deleteSurroundingText(corrected.length + 1, 0)
                 ic.commitText(original, 1)
+                keepWord(original)  // you undid it, so don't correct this word again
                 currentWord = original
                 updateSuggestions()
                 return
@@ -370,8 +376,39 @@ class PinyinKeysService : InputMethodService(),
             v != InputType.TYPE_TEXT_VARIATION_WEB_EMAIL_ADDRESS
     }
 
+    private var suggestJob: Job? = null
+
+    /**
+     * Works out suggestions for the current word on a background thread, so typing never
+     * waits for it; a newer keystroke cancels an older, unfinished lookup.
+     */
     private fun updateSuggestions() {
-        suggestions.value = if (suggestionsAllowed()) english?.suggest(currentWord) ?: emptyList() else emptyList()
+        suggestJob?.cancel()
+        val dict = english
+        val word = currentWord
+        if (!suggestionsAllowed() || dict == null || word.isEmpty()) { suggestions.value = emptyList(); return }
+        suggestJob = lifecycleScope.launch {
+            val list = withContext(Dispatchers.Default) {
+                val s = dict.suggest(word)
+                // Not a known word: also offer exactly what was typed (shown in quotes), so
+                // it can be kept as-is instead of being "corrected".
+                if (word.length >= 2 && !dict.isWord(word)) {
+                    val rest = s.filter { !it.equals(word, ignoreCase = true) }
+                    listOfNotNull(rest.getOrNull(0), LITERAL + word, rest.getOrNull(1))
+                } else s
+            }
+            if (currentWord == word) suggestions.value = list
+        }
+    }
+
+    /** Remember [word] as a real word: suggested, and never autocorrected. */
+    private fun keepWord(word: String) {
+        val dict = english ?: return
+        val lower = word.lowercase()
+        if (lower in dict.userWords) return
+        dict.userWords = dict.userWords + lower
+        val all = dict.userWords.toList().takeLast(2000)
+        lifecycleScope.launch(Dispatchers.IO) { Settings(this@PinyinKeysService).userWords = all }
     }
 
     private fun resetWord() {
@@ -405,8 +442,9 @@ class PinyinKeysService : InputMethodService(),
     }
 
     /** A suggestion tapped: replace the word being typed (or add the next word) + space. */
-    private fun pickSuggestion(word: String) {
+    private fun pickSuggestion(picked: String) {
         val ic = currentInputConnection ?: return
+        val word = if (picked.startsWith(LITERAL)) picked.removePrefix(LITERAL).also(::keepWord) else picked
         if (currentWord.isNotEmpty()) ic.deleteSurroundingText(currentWord.length, 0)
         ic.commitText("$word ", 1)
         currentWord = ""
@@ -1008,6 +1046,8 @@ class PinyinKeysService : InputMethodService(),
     companion object {
         private const val TAG = "PinyinKeys"
         private const val MAX_FIELD_CHARS = 10_000
+        /** Marks the "keep exactly what I typed" suggestion. */
+        const val LITERAL = "\u0001"
         /** In Chinese mode these keys type the full-width Chinese punctuation instead. */
         private val CHINESE_PUNCTUATION = mapOf(
             "," to "，", "." to "。", "?" to "？", "!" to "！", ":" to "：", ";" to "；",

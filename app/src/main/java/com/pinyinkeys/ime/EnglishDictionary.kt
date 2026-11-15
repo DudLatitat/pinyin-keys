@@ -14,8 +14,25 @@ class EnglishDictionary private constructor(
     /** all lowercase words, sorted, for prefix search */
     private val sorted: Array<String>,
 ) {
+    /** Words the user chose to keep (e.g. by undoing an autocorrect); never "corrected". */
+    @Volatile var userWords: Set<String> = emptySet()
+
     fun frequency(word: String): Int = byLower[word.lowercase()]?.second ?: -1
-    fun isWord(word: String) = word.lowercase() in byLower
+    fun isWord(word: String) = word.lowercase().let { it in byLower || it in userWords }
+
+    /**
+     * Contractions typed without the apostrophe ("arent" -> "aren't", "im" -> "I'm").
+     * These are by far the most common "typo", so they're checked first and win.
+     */
+    private fun apostropheFix(lower: String): String? {
+        if (lower.length < 2) return null
+        var best: Pair<String, Int>? = null
+        for (i in 1 until lower.length) {
+            val w = lower.substring(0, i) + "'" + lower.substring(i)
+            val f = byLower[w]?.second ?: continue
+            if (best == null || f > best.second) best = w to f
+        }
+        return best?.first
 
     /**
      * Up to [n] suggestions for a partly typed [typed] word, best first: likely
@@ -30,11 +47,13 @@ class EnglishDictionary private constructor(
             if (score > (scores[w] ?: Double.NEGATIVE_INFINITY)) scores[w] = score
         }
         byLower[lower]?.let { consider(lower, it.second + 40.0) }  // exact word: strong
+        if (lower in userWords) consider(lower, 300.0)
+        apostropheFix(lower)?.let { consider(it, 400.0) }  // "arent" -> "aren't" first
         // Completions: words starting with what's typed.
         val start = lowerBound(lower)
         var i = start
         var seen = 0
-        while (i < sorted.size && sorted[i].startsWith(lower) && seen < 3000) {
+        while (i < sorted.size && sorted[i].startsWith(lower) && seen < 1200) {
             val w = sorted[i]
             if (w != lower) consider(w, byLower.getValue(w).second - 4.0 * (w.length - lower.length))
             i++; seen++
@@ -45,7 +64,8 @@ class EnglishDictionary private constructor(
                 byLower[w]?.let { consider(w, it.second - cost * 25.0) }
             }
         }
-        return scores.entries.sortedByDescending { it.value }.take(n).map { matchCase(byLower.getValue(it.key).first, typed) }
+        return scores.entries.sortedByDescending { it.value }.take(n)
+            .map { matchCase(byLower[it.key]?.first ?: it.key, typed) }
     }
 
     /**
@@ -54,6 +74,9 @@ class EnglishDictionary private constructor(
      */
     fun autocorrect(typed: String): String? {
         val lower = typed.lowercase()
+        if (lower in userWords) return null
+        // Only when what was typed isn't a word itself ("ill", "were" and "its" are words).
+        if (lower !in byLower) apostropheFix(lower)?.let { return matchCase(it, typed) }
         if (lower.length < 2 || lower in byLower || typed.any { it.isDigit() }) {
             // Fix a lone lowercase "i" and missing apostrophes like "dont".
             return if (typed == "i") "I" else null

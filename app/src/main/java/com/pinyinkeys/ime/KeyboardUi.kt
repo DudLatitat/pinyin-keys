@@ -180,12 +180,13 @@ fun KeyboardUi(
                 // Like a standard keyboard, the bar changes with what you're doing: word
                 // suggestions while typing, a Paste button after a copy, otherwise the tools.
                 // (Translate results and Practice keep the tools so their buttons stay visible.)
-                else if (!toolsForced && !sensitive && assist is AssistState.Idle &&
-                    (mode == Mode.Assist || practice is PracticeState.Idle) && suggestions.isNotEmpty()
-                ) SuggestionBar(suggestions, onShowTools, onSuggestion)
+                // A fresh copy or screenshot comes first (it disappears once you type).
                 else if (!toolsForced && !sensitive && showPasteChip && pastePreview != null &&
                     assist is AssistState.Idle
                 ) PasteBar(pastePreview, onShowTools, onPasteChip)
+                else if (!toolsForced && !sensitive && assist is AssistState.Idle &&
+                    (mode == Mode.Assist || practice is PracticeState.Idle) && suggestions.isNotEmpty()
+                ) SuggestionBar(suggestions, onShowTools, onSuggestion)
                 else Toolbar(sensitive, mode, onMode, assist, onTranslate, onInsertChinese,
                     practice, onStartPractice, onHint, panelShown, togglePanel, onOpenSettings,
                     showPasteChip && !sensitive, onPasteChip)
@@ -733,8 +734,10 @@ private fun SuggestionBar(words: List<String>, onTools: () -> Unit, onPick: (Str
                 Modifier.weight(1f).height(44.dp).clickable(enabled = w != null) { w?.let(onPick) },
                 contentAlignment = Alignment.Center,
             ) {
+                // The "keep what I typed" option is shown in quotes.
                 if (w != null) Text(
-                    w, fontSize = 17.sp, color = kb.label, maxLines = 1,
+                    if (w.startsWith(PinyinKeysService.LITERAL)) "\"${w.removePrefix(PinyinKeysService.LITERAL)}\"" else w,
+                    fontSize = 17.sp, color = kb.label, maxLines = 1,
                     fontWeight = if (i == 1) FontWeight.SemiBold else FontWeight.Normal,
                 )
             }
