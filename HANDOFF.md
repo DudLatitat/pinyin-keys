@@ -3,7 +3,10 @@
 ## Status (start here)
 - Done: repo, rules, Milestone 1 code (Compose QWERTY IME, switch-back key, setup
   screen) and a CI workflow that builds a debug APK and publishes it as a prerelease.
-- Next: owner tests Milestone 1 in WeChat; then signed release builds and Milestone 2.
+- Milestone 1 tested in WeChat by the owner: works. Signed release builds work in CI.
+- Milestone 2 code written: settings screen (API key in EncryptedSharedPreferences, base URL,
+  model), Translate button, sentence cards, Insert Chinese. Raw HTTPS to the Messages API with
+  structured outputs (json_schema) and effort=low. Next: owner tests it in WeChat.
   - Signing: keystore generated; CI signs the release when SIGNING_* Actions secrets are set.
 - No Android SDK in the cloud workspace: app code is compiled only by CI. Read build
   failures from the workflow's job annotations/logs.

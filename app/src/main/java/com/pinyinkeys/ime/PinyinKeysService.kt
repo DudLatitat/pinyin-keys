@@ -6,6 +6,14 @@ import android.view.KeyEvent
 import android.view.View
 import android.view.inputmethod.EditorInfo
 import androidx.compose.runtime.mutableStateOf
+import android.util.Log
+import android.view.inputmethod.ExtractedTextRequest
+import androidx.lifecycle.lifecycleScope
+import com.pinyinkeys.ime.translate.TranslationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import androidx.compose.ui.platform.ComposeView
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
@@ -42,6 +50,10 @@ class PinyinKeysService : InputMethodService(),
     /** True in password / "incognito" fields. Later milestones hide all translation UI then. */
     private val sensitiveField = mutableStateOf(false)
 
+    /** What the Assist panel shows. Compose redraws whenever this changes. */
+    private val assistState = mutableStateOf<AssistState>(AssistState.Idle)
+    private var translateJob: Job? = null
+
     override fun onCreate() {
         super.onCreate()
         savedStateController.performRestore(null)
@@ -61,6 +73,9 @@ class PinyinKeysService : InputMethodService(),
             setContent {
                 KeyboardUi(
                     sensitive = sensitiveField.value,
+                    assist = assistState.value,
+                    onTranslate = ::translateField,
+                    onInsertChinese = ::insertChinese,
                     onText = ::typeText,
                     onBackspace = ::backspace,
                     onEnter = ::enter,
@@ -74,6 +89,11 @@ class PinyinKeysService : InputMethodService(),
     override fun onStartInputView(info: EditorInfo?, restarting: Boolean) {
         super.onStartInputView(info, restarting)
         sensitiveField.value = info != null && isSensitive(info)
+        // New text field: forget the previous translation.
+        if (!restarting) {
+            translateJob?.cancel()
+            assistState.value = AssistState.Idle
+        }
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_RESUME)
     }
 
@@ -116,6 +136,67 @@ class PinyinKeysService : InputMethodService(),
         }
     }
 
+    // --- Assist mode ---
+
+    /** Reads the whole text field. Only ever called from the Translate button. */
+    private fun readFieldText(): String {
+        val ic = currentInputConnection ?: return ""
+        val extracted = ic.getExtractedText(ExtractedTextRequest(), 0)?.text?.toString()
+        val text = extracted ?: buildString {
+            append(ic.getTextBeforeCursor(MAX_FIELD_CHARS, 0) ?: "")
+            append(ic.getSelectedText(0) ?: "")
+            append(ic.getTextAfterCursor(MAX_FIELD_CHARS, 0) ?: "")
+        }
+        // Length only, never content (see CLAUDE.md).
+        Log.d(TAG, "Read field: ${text.length} chars (extracted=${extracted != null})")
+        return text
+    }
+
+    private fun translateField() {
+        if (sensitiveField.value) return
+        val text = readFieldText().trim()
+        if (text.isEmpty()) {
+            assistState.value = AssistState.Error("Type something first.")
+            return
+        }
+        val service = Settings(this).translationService()
+        if (service == null) {
+            assistState.value = AssistState.Error("Add your API key in the Pinyin Keys app.")
+            return
+        }
+        translateJob?.cancel()
+        assistState.value = AssistState.Loading
+        // lifecycleScope is cancelled automatically when the keyboard service is destroyed.
+        translateJob = lifecycleScope.launch {
+            assistState.value = try {
+                // Dispatchers.IO: network must not run on the main (UI) thread.
+                AssistState.Result(withContext(Dispatchers.IO) { service.translate(text) })
+            } catch (e: TranslationException) {
+                AssistState.Error(e.userMessage)
+            } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                Log.w(TAG, "Translate failed: ${e.javaClass.simpleName}")
+                AssistState.Error("Couldn't translate. Try again.")
+            }
+        }
+    }
+
+    /** Replaces everything in the text field with the Chinese. */
+    private fun insertChinese() {
+        val result = (assistState.value as? AssistState.Result)?.result ?: return
+        val ic = currentInputConnection ?: return
+        val hanzi = result.sentences.joinToString("") { it.hanzi }
+        // Batch edit: the app sees one change instead of several flickering ones.
+        ic.beginBatchEdit()
+        val before = ic.getTextBeforeCursor(MAX_FIELD_CHARS, 0)?.length ?: 0
+        val after = ic.getTextAfterCursor(MAX_FIELD_CHARS, 0)?.length ?: 0
+        if (!ic.getSelectedText(0).isNullOrEmpty()) ic.commitText("", 1)
+        ic.deleteSurroundingText(before, after)
+        ic.commitText(hanzi, 1)
+        ic.endBatchEdit()
+        assistState.value = AssistState.Idle
+    }
+
     private fun isSensitive(info: EditorInfo): Boolean {
         val cls = info.inputType and InputType.TYPE_MASK_CLASS
         val variation = info.inputType and InputType.TYPE_MASK_VARIATION
@@ -127,5 +208,10 @@ class PinyinKeysService : InputMethodService(),
             variation == InputType.TYPE_NUMBER_VARIATION_PASSWORD)
         val noLearning = (info.imeOptions and EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING) != 0
         return password || noLearning
+    }
+
+    companion object {
+        private const val TAG = "PinyinKeys"
+        private const val MAX_FIELD_CHARS = 10_000
     }
 }

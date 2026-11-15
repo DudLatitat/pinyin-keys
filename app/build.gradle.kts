@@ -2,6 +2,7 @@ plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
+    id("org.jetbrains.kotlin.plugin.serialization")
 }
 
 android {
@@ -56,4 +57,10 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
     implementation("androidx.savedstate:savedstate-ktx:1.2.1")
     implementation("androidx.core:core-ktx:1.15.0")
+    // JSON parsing for the translation API (official Kotlin library, no tracking).
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
+    // Background work (network calls) without freezing the keyboard.
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
+    // EncryptedSharedPreferences: stores the API key encrypted with the Android Keystore.
+    implementation("androidx.security:security-crypto:1.0.0")
 }

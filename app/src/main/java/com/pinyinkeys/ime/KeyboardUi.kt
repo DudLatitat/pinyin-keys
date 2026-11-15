@@ -18,6 +18,17 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.ui.text.font.FontWeight
+import com.pinyinkeys.ime.translate.Sentence
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -36,12 +47,15 @@ private val SYMBOL_ROWS = listOf("1234567890", "@#\$%&-+()/", "*\"':;!?")
  * The QWERTY keyboard. Pure UI: every key just calls one of the callbacks,
  * and the service turns that into edits on the text field.
  *
- * `sensitive` is unused in Milestone 1 (the keyboard is plain everywhere); later the
- * translation panel above the keys will be hidden when it's true.
+ * When `sensitive` is true (password / incognito fields) the Assist panel is hidden
+ * entirely and the keyboard is plain.
  */
 @Composable
 fun KeyboardUi(
     sensitive: Boolean,
+    assist: AssistState,
+    onTranslate: () -> Unit,
+    onInsertChinese: () -> Unit,
     onText: (String) -> Unit,
     onBackspace: () -> Unit,
     onEnter: () -> Unit,
@@ -59,6 +73,7 @@ fun KeyboardUi(
                     Modifier.widthIn(max = 720.dp).fillMaxWidth().padding(4.dp),
                     verticalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
+                    if (!sensitive) AssistPanel(assist, onTranslate, onInsertChinese)
                     val rows = if (symbols) SYMBOL_ROWS else LETTER_ROWS
                     rows.forEachIndexed { i, row ->
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -110,4 +125,48 @@ private fun RowScope.Key(label: String, weight: Float = 1f, onClick: () -> Unit)
 @Composable
 private fun RowScope.Spacer1(weight: Float) {
     Box(Modifier.weight(weight))
+}
+
+/** Translate button, sentence cards and "Insert Chinese", above the keys. */
+@Composable
+private fun AssistPanel(state: AssistState, onTranslate: () -> Unit, onInsertChinese: () -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            FilledTonalButton(onClick = onTranslate, enabled = state !is AssistState.Loading) {
+                Text("Translate")
+            }
+            Spacer(Modifier.width(8.dp))
+            when (state) {
+                is AssistState.Loading -> CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                is AssistState.Error -> Text(state.message, color = MaterialTheme.colorScheme.error, fontSize = 14.sp)
+                is AssistState.Result -> Box(Modifier.weight(1f), contentAlignment = Alignment.CenterEnd) {
+                    Button(onClick = onInsertChinese) { Text("Insert Chinese") }
+                }
+                AssistState.Idle -> {}
+            }
+        }
+        if (state is AssistState.Result) {
+            // Cap the height so the keys stay on screen; scroll if there are many sentences.
+            Column(
+                Modifier.heightIn(max = 220.dp).verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                state.result.sentences.forEach { SentenceCard(it) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SentenceCard(sentence: Sentence) {
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
+            .background(MaterialTheme.colorScheme.surface)
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+    ) {
+        Text(sentence.hanzi, fontSize = 24.sp, color = MaterialTheme.colorScheme.onSurface)
+        Text(sentence.pinyin, fontSize = 15.sp, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Medium)
+    }
 }
