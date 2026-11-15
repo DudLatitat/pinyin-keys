@@ -60,6 +60,10 @@ class SetupActivity : ComponentActivity() {
                             imm.showInputMethodPicker()
                         }) { Text("Pick keyboard") }
 
+                        Button(onClick = {
+                            startActivity(Intent(this@SetupActivity, com.pinyinkeys.ime.saved.SavedActivity::class.java))
+                        }) { Text("Saved sentences") }
+
                         HorizontalDivider()
                         Text("Translation", style = MaterialTheme.typography.titleMedium)
 

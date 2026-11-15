@@ -23,6 +23,11 @@
             </intent-filter>
         </activity>
 
+        <!-- Saved sentences list, opened from SetupActivity. -->
+        <activity
+            android:name=".saved.SavedActivity"
+            android:exported="false" />
+
         <!-- The keyboard itself. BIND_INPUT_METHOD means only the system can bind to it;
              the intent-filter + meta-data are what make it show up in keyboard settings. -->
         <service

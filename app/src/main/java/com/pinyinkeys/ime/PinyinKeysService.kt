@@ -8,6 +8,9 @@ import android.view.inputmethod.EditorInfo
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableStateMapOf
 import com.pinyinkeys.ime.translate.Sentence
+import com.pinyinkeys.ime.translate.Chunk
+import com.pinyinkeys.ime.saved.AppDatabase
+import com.pinyinkeys.ime.saved.SavedSentence
 import com.pinyinkeys.ime.translate.SentenceDetails
 import com.pinyinkeys.ime.translate.TranslationService
 import android.util.Log
@@ -65,6 +68,8 @@ class PinyinKeysService : InputMethodService(),
     /** Per-card breakdown and "Why?"; state maps so Compose redraws each card on change. */
     private val detailsStates = mutableStateMapOf<Sentence, Load<SentenceDetails>>()
     private val whyStates = mutableStateMapOf<Sentence, Load<String>>()
+    /** Sentences saved (or being saved) during this translation, so the star fills in. */
+    private val savedStates = mutableStateMapOf<Sentence, Load<Unit>>()
 
     override fun onCreate() {
         super.onCreate()
@@ -97,6 +102,8 @@ class PinyinKeysService : InputMethodService(),
                     onExpand = ::loadDetails,
                     whyStates = whyStates,
                     onWhy = ::explain,
+                    savedStates = savedStates,
+                    onSave = ::saveSentence,
                     onText = ::typeText,
                     onBackspace = ::backspace,
                     onEnter = ::enter,
@@ -114,7 +121,7 @@ class PinyinKeysService : InputMethodService(),
         if (!restarting) {
             translateJob?.cancel()
             assistState.value = AssistState.Idle
-            detailsStates.clear(); whyStates.clear()
+            detailsStates.clear(); whyStates.clear(); savedStates.clear()
             practiceState.value = PracticeState.Idle
         }
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_RESUME)
@@ -141,7 +148,7 @@ class PinyinKeysService : InputMethodService(),
         if (assistState.value == AssistState.Idle) return
         translateJob?.cancel()
         assistState.value = AssistState.Idle
-        detailsStates.clear(); whyStates.clear()
+        detailsStates.clear(); whyStates.clear(); savedStates.clear()
     }
 
     private fun typeText(text: String) {
@@ -210,7 +217,7 @@ class PinyinKeysService : InputMethodService(),
             return
         }
         translateJob?.cancel()
-        detailsStates.clear(); whyStates.clear()
+        detailsStates.clear(); whyStates.clear(); savedStates.clear()
         assistState.value = AssistState.Loading
         // lifecycleScope is cancelled automatically when the keyboard service is destroyed.
         translateJob = lifecycleScope.launch {
@@ -250,6 +257,34 @@ class PinyinKeysService : InputMethodService(),
         lifecycleScope.launch {
             whyStates[sentence] = onDemand("Couldn't load explanation. Try again.") { cache, service ->
                 cache.getWhy(sentence) ?: service().explain(sentence, details).also { cache.putWhy(sentence, it) }
+            }
+        }
+    }
+
+    /** Star tapped: save the sentence (with its breakdown) to the on-phone database. */
+    private fun saveSentence(sentence: Sentence) {
+        if (sensitiveField.value) return
+        val current = savedStates[sentence]
+        if (current is Load.Loading || current is Load.Loaded) return
+        savedStates[sentence] = Load.Loading
+        lifecycleScope.launch {
+            savedStates[sentence] = onDemand("Couldn't save. Try again.") { cache, service ->
+                val details = cache.getDetails(sentence)
+                    ?: service().details(sentence).also { cache.putDetails(sentence, it) }
+                kotlinx.coroutines.runBlocking {
+                    val dao = AppDatabase.get(this@PinyinKeysService).saved()
+                    if (!dao.exists(sentence.en, sentence.hanzi)) {
+                        dao.insert(
+                            SavedSentence(
+                                en = sentence.en, hanzi = sentence.hanzi, pinyin = sentence.pinyin,
+                                chunksJson = kotlinx.serialization.json.Json.encodeToString(
+                                    kotlinx.serialization.builtins.ListSerializer(Chunk.serializer()), details.chunks,
+                                ),
+                                savedAt = System.currentTimeMillis(),
+                            )
+                        )
+                    }
+                }
             }
         }
     }

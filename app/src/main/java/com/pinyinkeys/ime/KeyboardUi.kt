@@ -70,6 +70,8 @@ fun KeyboardUi(
     onExpand: (Sentence) -> Unit,
     whyStates: Map<Sentence, Load<String>>,
     onWhy: (Sentence) -> Unit,
+    savedStates: Map<Sentence, Load<Unit>>,
+    onSave: (Sentence) -> Unit,
     onText: (String) -> Unit,
     onBackspace: () -> Unit,
     onEnter: () -> Unit,
@@ -90,7 +92,7 @@ fun KeyboardUi(
                     if (!sensitive) {
                         ModeToggle(mode, onMode)
                         when (mode) {
-                            Mode.Assist -> AssistPanel(assist, onTranslate, onInsertChinese, detailsStates, onExpand, whyStates, onWhy)
+                            Mode.Assist -> AssistPanel(assist, onTranslate, onInsertChinese, detailsStates, onExpand, whyStates, onWhy, savedStates, onSave)
                             Mode.Practice -> PracticePanel(practice, onStartPractice, onHint)
                         }
                     }
@@ -157,6 +159,8 @@ private fun AssistPanel(
     onExpand: (Sentence) -> Unit,
     whyStates: Map<Sentence, Load<String>>,
     onWhy: (Sentence) -> Unit,
+    savedStates: Map<Sentence, Load<Unit>>,
+    onSave: (Sentence) -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -182,7 +186,7 @@ private fun AssistPanel(
                 state.result.sentences.forEachIndexed { i, sentence ->
                     // key(): remember each card's expanded state separately, reset on a new translation.
                     androidx.compose.runtime.key(state.result, i) {
-                        SentenceCard(sentence, detailsStates[sentence], whyStates[sentence], { onExpand(sentence) }, { onWhy(sentence) })
+                        SentenceCard(sentence, detailsStates[sentence], whyStates[sentence], savedStates[sentence], { onExpand(sentence) }, { onWhy(sentence) }, { onSave(sentence) })
                     }
                 }
             }
@@ -200,8 +204,10 @@ private fun SentenceCard(
     sentence: Sentence,
     details: Load<SentenceDetails>?,
     why: Load<String>?,
+    saved: Load<Unit>?,
     onExpand: () -> Unit,
     onWhy: () -> Unit,
+    onSave: () -> Unit,
 ) {
     var expanded by remember { mutableStateOf(false) }
     Column(
@@ -216,8 +222,20 @@ private fun SentenceCard(
             .padding(horizontal = 12.dp, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
-        Text(sentence.hanzi, fontSize = 24.sp, color = MaterialTheme.colorScheme.onSurface)
-        Text(sentence.pinyin, fontSize = 15.sp, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Medium)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text(sentence.hanzi, fontSize = 24.sp, color = MaterialTheme.colorScheme.onSurface)
+                Text(sentence.pinyin, fontSize = 15.sp, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Medium)
+            }
+            // Bookmark: ☆ not saved, ★ saved. Its own tap target, so it doesn't open the card.
+            when (saved) {
+                Load.Loading -> CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                else -> TextButton(onClick = onSave, enabled = saved !is Load.Loaded) {
+                    Text(if (saved is Load.Loaded) "★" else "☆", fontSize = 22.sp)
+                }
+            }
+        }
+        if (saved is Load.Error) Text(saved.message, fontSize = 13.sp, color = MaterialTheme.colorScheme.error)
         if (!expanded) return@Column
         when (details) {
             null, Load.Loading -> CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)

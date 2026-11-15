@@ -14,7 +14,8 @@
 - Milestone 4 code written (Practice.kt + PracticePanel): Assist/Practice toggle, syllable
   matching (tones optional, setting to require them; v or u for ü), auto punctuation, Hint,
   Restart. Backspace in Practice only edits the pinyin buffer. Tested by the owner: works.
-- Next: Milestone 5 (saved sentences in Room).
+- Milestone 5 code written: ☆ on each Assist card saves en/hanzi/pinyin/chunksJson/savedAt to
+  Room (saved/SavedSentences.kt); "Saved sentences" screen in the app with Delete. Next: owner tests it.
   - Signing: keystore generated; CI signs the release when SIGNING_* Actions secrets are set.
 - No Android SDK in the cloud workspace: app code is compiled only by CI. Read build
   failures from the workflow's job annotations/logs.
