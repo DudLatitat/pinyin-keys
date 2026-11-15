@@ -3,6 +3,13 @@ A personal Android keyboard that shows Chinese and pinyin for the English you ty
 **Install:** download `pinyin-keys-<version>.apk` below, open it on the phone, then turn on
 Pinyin Keys in the system keyboard settings. Add your Claude API key in the Pinyin Keys app.
 
+## New in 1.0.9
+- 🔊 on each card reads the Chinese aloud with the phone's own voice.
+- Chinese typing suggests the whole phrase first: "xiexiehahahaha" → 谢谢哈哈哈哈,
+  "woxiangnile" → 我想你了.
+- Suggestions animate as they change; after an autocorrect the bar shows "teh → the"
+  for a moment (tap to undo).
+
 ## New in 1.0.8
 - Top bar uses icons: 助/练 (Assist/Practice), 译 (Translate), 📋 (Paste).
 - Translation cards stay visible while typing in 中 mode; ⧉ on a card copies its pinyin.

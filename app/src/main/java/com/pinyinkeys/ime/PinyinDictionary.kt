@@ -17,6 +17,48 @@ class PinyinDictionary private constructor(
     private val words: Array<String>,
     private val freqs: IntArray,
 ) {
+    /** pinyin -> index of its most common word (the file lists the most common first). */
+    private val bestByKey = HashMap<String, Int>(keys.size).also { m ->
+        for (i in keys.indices) m.putIfAbsent(keys[i], i)
+    }
+
+    /**
+     * The whole input as one phrase: splits the letters into the most likely sequence of
+     * dictionary words, e.g. "xiexiehahahaha" -> 谢谢 + 哈哈哈 + 哈 = "谢谢哈哈哈哈".
+     * Each word scores log(frequency) minus a fixed cost (16, tuned on common phrases), so
+     * fewer, longer, common words win.
+     * Unfinished letters at the end are completed with the most common matching word.
+     */
+    private fun wholePhrase(typed: String): String? {
+        val n = typed.length
+        if (n < 4 || n > 60) return null
+        val score = DoubleArray(n + 1) { Double.NEGATIVE_INFINITY }
+        val from = IntArray(n + 1) { -1 }
+        val word = arrayOfNulls<String>(n + 1)
+        score[0] = 0.0
+        for (i in 0 until n) {
+            if (score[i] == Double.NEGATIVE_INFINITY) continue
+            for (j in i + 1..minOf(n, i + 18)) {
+                val idx = bestByKey[typed.substring(i, j)] ?: continue
+                val sc = score[i] + kotlin.math.ln(freqs[idx] + 1.0) - 16.0
+                if (sc > score[j]) { score[j] = sc; from[j] = i; word[j] = words[idx] }
+            }
+        }
+        // End point: the full input, or the furthest reachable point plus a completed tail.
+        var end = n
+        var tail = ""
+        if (score[n] == Double.NEGATIVE_INFINITY) {
+            end = (n downTo 1).firstOrNull { score[it] > Double.NEGATIVE_INFINITY } ?: return null
+            tail = completions(typed.substring(end), 1).firstOrNull() ?: return null
+        }
+        val parts = ArrayList<String>()
+        var k = end
+        while (k > 0) { parts += word[k]!!; k = from[k] }
+        parts.reverse()
+        if (tail.isNotEmpty()) parts += tail
+        return if (parts.size >= 2) parts.joinToString("") else null
+    }
+
     /**
      * Suggestions for the letters typed so far, best first:
      * 1. words whose pinyin is exactly [typed] ("nihao" -> 你好),
@@ -29,6 +71,8 @@ class PinyinDictionary private constructor(
         val out = LinkedHashMap<String, Candidate>()
         fun add(c: Candidate) { if (out.size < limit && c.word !in out) out[c.word] = c }
 
+        // Whole input as one phrase first (only when it needs more than one word).
+        wholePhrase(typed)?.let { add(Candidate(it, typed.length)) }
         exact(typed).forEach { add(Candidate(it, typed.length)) }
         completions(typed, 12).forEach { add(Candidate(it, typed.length)) }
         for (len in typed.length - 1 downTo 1) {

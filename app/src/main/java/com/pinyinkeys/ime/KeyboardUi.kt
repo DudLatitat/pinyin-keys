@@ -55,6 +55,12 @@ import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.togetherWith
+import androidx.compose.animation.core.tween
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -154,6 +160,9 @@ fun KeyboardUi(
     onSuggestion: (String) -> Unit,
     toolsForced: Boolean,
     onShowTools: () -> Unit,
+    correction: Pair<String, String>?,
+    onUndoCorrection: () -> Unit,
+    onSpeak: (String) -> Unit,
     onEdit: (EditAction) -> Unit,
     onOpenSettings: () -> Unit,
     numberPad: NumberPadKind?,
@@ -171,7 +180,7 @@ fun KeyboardUi(
     val kb = if (dark) DarkKb else LightKb
 
     MaterialTheme(colorScheme = colors) {
-      CompositionLocalProvider(LocalKb provides kb) {
+      CompositionLocalProvider(LocalKb provides kb, LocalSpeak provides onSpeak) {
         Surface(color = kb.background) {
             // While typing pinyin, the suggestion bar takes the toolbar's place (like other keyboards).
             val toolbar: @Composable () -> Unit = {
@@ -182,6 +191,9 @@ fun KeyboardUi(
                 // Like a standard keyboard, the bar changes with what you're doing: word
                 // suggestions while typing, a Paste button after a copy, otherwise the tools.
                 // (Translate results and Practice keep the tools so their buttons stay visible.)
+                // Right after an autocorrect: "teh → the", tap to undo.
+                else if (!toolsForced && !sensitive && correction != null)
+                    CorrectionBar(correction, onUndoCorrection)
                 // A fresh copy or screenshot comes first (it disappears once you type).
                 else if (!toolsForced && !sensitive && showPasteChip && pastePreview != null &&
                     assist is AssistState.Idle
@@ -609,6 +621,9 @@ private fun SentenceCard(
                 Text(sentence.hanzi, fontSize = 24.sp, color = MaterialTheme.colorScheme.onSurface)
                 Text(sentence.pinyin, fontSize = 15.sp, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Medium)
             }
+            // 🔊 reads the Chinese aloud.
+            val speak = LocalSpeak.current
+            TextButton(onClick = { speak(sentence.hanzi) }) { Text("🔊", fontSize = 18.sp) }
             // ⧉ copies the pinyin (the keyboard stays open).
             val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
             TextButton(onClick = {
@@ -745,12 +760,22 @@ private fun SuggestionBar(words: List<String>, onTools: () -> Unit, onPick: (Str
                 Modifier.weight(1f).height(44.dp).clickable(enabled = w != null) { w?.let(onPick) },
                 contentAlignment = Alignment.Center,
             ) {
-                // The "keep what I typed" option is shown in quotes.
-                if (w != null) Text(
-                    if (w.startsWith(PinyinKeysService.LITERAL)) "\"${w.removePrefix(PinyinKeysService.LITERAL)}\"" else w,
-                    fontSize = 17.sp, color = kb.label, maxLines = 1,
-                    fontWeight = if (i == 1) FontWeight.SemiBold else FontWeight.Normal,
-                )
+                // Each word slides/fades in when it changes, like other keyboards.
+                AnimatedContent(
+                    targetState = w,
+                    transitionSpec = {
+                        (fadeIn(tween(140)) + slideInVertically(tween(140)) { it / 3 }) togetherWith
+                            fadeOut(tween(90))
+                    },
+                    label = "suggestion",
+                ) { word ->
+                    // The "keep what I typed" option is shown in quotes.
+                    if (word != null) Text(
+                        if (word.startsWith(PinyinKeysService.LITERAL)) "\"${word.removePrefix(PinyinKeysService.LITERAL)}\"" else word,
+                        fontSize = 17.sp, color = kb.label, maxLines = 1,
+                        fontWeight = if (i == 1) FontWeight.SemiBold else FontWeight.Normal,
+                    )
+                }
             }
         }
         Box(Modifier.width(40.dp))
@@ -779,5 +804,33 @@ private fun PasteBar(preview: String, onTools: () -> Unit, onPaste: () -> Unit) 
             }
         }
         Box(Modifier.width(40.dp))
+    }
+}
+
+/** Lets any card read text aloud without passing the callback through every function. */
+val LocalSpeak = staticCompositionLocalOf<(String) -> Unit> { {} }
+
+/** Briefly shown after an autocorrect, sliding in: "teh → the". Tap to undo. */
+@Composable
+private fun CorrectionBar(correction: Pair<String, String>, onUndo: () -> Unit) {
+    val kb = LocalKb.current
+    var shown by remember(correction) { mutableStateOf(false) }
+    LaunchedEffect(correction) { shown = true }
+    Box(Modifier.fillMaxWidth().height(44.dp).background(kb.toolbar), contentAlignment = Alignment.Center) {
+        androidx.compose.animation.AnimatedVisibility(
+            visible = shown,
+            enter = fadeIn(tween(160)) + slideInVertically(tween(160)) { it / 2 },
+        ) {
+            Row(
+                Modifier.clip(RoundedCornerShape(17.dp)).background(kb.key).clickable(onClick = onUndo)
+                    .padding(horizontal = 14.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(correction.first, fontSize = 16.sp, color = kb.label.copy(alpha = 0.6f))
+                Text("  →  ", fontSize = 16.sp, color = kb.accent)
+                Text(correction.second, fontSize = 16.sp, color = kb.label, fontWeight = FontWeight.SemiBold)
+                Text("   tap to undo", fontSize = 12.sp, color = kb.label.copy(alpha = 0.5f))
+            }
+        }
     }
 }

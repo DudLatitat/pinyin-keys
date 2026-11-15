@@ -101,6 +101,11 @@ class PinyinKeysService : InputMethodService(),
     private val suggestions = mutableStateOf<List<String>>(emptyList())
     /** User tapped ‹ to see the tools instead of suggestions; cleared on the next letter. */
     private val toolsForced = mutableStateOf(false)
+    /** Shown briefly in the bar after an autocorrect: (what you typed, what it became). */
+    private val correctionNotice = mutableStateOf<Pair<String, String>?>(null)
+    private val hideCorrection = Runnable { correctionNotice.value = null }
+
+    private var speech: Speech? = null
     /** A new screenshot waiting to be offered; it's only copied if Paste is tapped. */
     private var pendingScreenshot: android.net.Uri? = null
     private var offeredScreenshot: android.net.Uri? = null
@@ -192,6 +197,9 @@ class PinyinKeysService : InputMethodService(),
                     onSuggestion = ::pickSuggestion,
                     toolsForced = toolsForced.value,
                     onShowTools = { toolsForced.value = true },
+                    correction = correctionNotice.value,
+                    onUndoCorrection = ::undoAutocorrect,
+                    onSpeak = ::speak,
                     onPasteChip = ::pasteFromChip,
                     onEdit = ::edit,
                     onOpenSettings = ::openSettings,
@@ -254,7 +262,13 @@ class PinyinKeysService : InputMethodService(),
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_PAUSE)
     }
 
+    private fun speak(text: String) {
+        val s = speech ?: Speech(this).also { speech = it }
+        if (!s.speak(text)) toast("No Chinese voice installed. Add one in Android's text-to-speech settings.")
+    }
+
     override fun onDestroy() {
+        speech?.shutdown()
         getSystemService(android.content.ClipboardManager::class.java)?.removePrimaryClipChangedListener(clipListener)
         super.onDestroy()
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_DESTROY)
@@ -305,6 +319,7 @@ class PinyinKeysService : InputMethodService(),
             // A letter: part of the current word. Update suggestions for it.
             ic.commitText(text, 1)
             currentWord += c
+            correctionNotice.value = null
             if (shift.value == Shift.On) shift.value = Shift.Off
             toolsForced.value = false
             updateSuggestions()
@@ -346,20 +361,7 @@ class PinyinKeysService : InputMethodService(),
         }
         if (!chinese.value) clearAssist()
         val ic = currentInputConnection ?: return
-        // Backspace right after an autocorrect: put back what was typed.
-        lastAutocorrect?.let { (original, corrected) ->
-            lastAutocorrect = null
-            val before = ic.getTextBeforeCursor(corrected.length + 1, 0)?.toString()
-            if (before == "$corrected ") {
-                markOwnEdit()
-                ic.deleteSurroundingText(corrected.length + 1, 0)
-                ic.commitText(original, 1)
-                keepWord(original)  // you undid it, so don't correct this word again
-                currentWord = original
-                updateSuggestions()
-                return
-            }
-        }
+        if (undoAutocorrect()) return
         if (currentWord.isNotEmpty()) currentWord = currentWord.dropLast(1)
         if (currentWord.isEmpty()) suggestions.value = emptyList() else updateSuggestions()
         val now = android.os.SystemClock.uptimeMillis()
@@ -381,6 +383,26 @@ class PinyinKeysService : InputMethodService(),
     }
 
     private var lastBackspaceAt = 0L
+
+    /**
+     * Puts back what was typed before the last autocorrect (backspace right after it, or
+     * tapping the "teh → the" notice), and stops correcting that word. True if undone.
+     */
+    private fun undoAutocorrect(): Boolean {
+        val (original, corrected) = lastAutocorrect ?: correctionNotice.value ?: return false
+        lastAutocorrect = null
+        correctionNotice.value = null
+        val ic = currentInputConnection ?: return false
+        val before = ic.getTextBeforeCursor(corrected.length + 1, 0)?.toString()
+        if (before != "$corrected ") return false
+        markOwnEdit()
+        ic.deleteSurroundingText(corrected.length + 1, 0)
+        ic.commitText(original, 1)
+        keepWord(original)  // you undid it, so don't correct this word again
+        currentWord = original
+        updateSuggestions()
+        return true
+    }
 
     // --- Suggestions and autocorrect (English) ---
 
@@ -453,6 +475,9 @@ class PinyinKeysService : InputMethodService(),
                 ic.deleteSurroundingText(word.length, 0)
                 ic.commitText(fix, 1)
                 lastAutocorrect = word to fix
+                correctionNotice.value = word to fix
+                mainHandler.removeCallbacks(hideCorrection)
+                mainHandler.postDelayed(hideCorrection, 2500)
                 final = fix
             }
         }
