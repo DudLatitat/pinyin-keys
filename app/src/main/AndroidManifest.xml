@@ -42,5 +42,15 @@
                 android:name="android.view.im"
                 android:resource="@xml/method" />
         </service>
+        <!-- Lets a pasted image be handed to the other app with a temporary read grant. -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.clips"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/clip_paths" />
+        </provider>
     </application>
 </manifest>

@@ -33,6 +33,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.graphics.asImageBitmap
 
 /** Which panel replaces the letter keys. */
 enum class Panel { Keys, Emoji, Clipboard, Edit }
@@ -138,6 +139,23 @@ fun ClipboardHeader(onClose: () -> Unit, onClearHistory: () -> Unit) {
 /** One clipboard item and where it came from. */
 data class ClipItem(val text: String, val pinned: Boolean, val current: Boolean)
 
+/** Small preview of a copied image, decoded at reduced size to keep it quick. */
+@Composable
+private fun ClipImage(entry: String, modifier: Modifier) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val bitmap = remember(entry) {
+        Clips.imageFile(context, entry)?.takeIf { it.exists() }?.let { f ->
+            android.graphics.BitmapFactory.decodeFile(
+                f.path, android.graphics.BitmapFactory.Options().apply { inSampleSize = 4 },
+            )?.asImageBitmap()
+        }
+    }
+    if (bitmap != null) androidx.compose.foundation.Image(
+        bitmap, contentDescription = "Copied image", modifier = modifier,
+        contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+    ) else Text("🖼 Image", fontSize = 14.sp, color = LocalKb.current.label, modifier = modifier)
+}
+
 /**
  * Clipboard as a grid of cards: what's copied now (read only because you opened
  * this panel), pinned snippets, then things you've pasted with this keyboard.
@@ -171,10 +189,14 @@ fun ClipboardGrid(
                         .clickable { onPaste(item.text) }
                         .padding(start = 10.dp, end = 4.dp, top = 8.dp),
                 ) {
-                    Text(item.text, fontSize = 14.sp, color = kb.label, maxLines = 3,
-                        overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                    if (Clips.isImage(item.text)) {
+                        ClipImage(item.text, Modifier.weight(1f).fillMaxWidth().clip(RoundedCornerShape(6.dp)))
+                    } else {
+                        Text(item.text, fontSize = 14.sp, color = kb.label, maxLines = 3,
+                            overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                    }
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        if (item.current) Text("Now", fontSize = 11.sp, color = kb.accent, modifier = Modifier.weight(1f))
+                        if (item.current) Text("Latest", fontSize = 11.sp, color = kb.accent, modifier = Modifier.weight(1f))
                         else Box(Modifier.weight(1f))
                         Text(
                             "📌", fontSize = 14.sp,

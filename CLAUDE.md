@@ -54,7 +54,12 @@ Git author identity: commits use the GitHub noreply email, never a personal emai
 - Password and sensitive fields: if `EditorInfo.inputType` is a password variation or
   `IME_FLAG_NO_PERSONALIZED_LEARNING` is set, show a plain keyboard. Read nothing,
   send nothing, store nothing.
-- Clipboard and text field contents are read only on an explicit user action.
+- Text field contents are read only on an explicit user action.
+- Clipboard (owner's decision): the keyboard keeps a history of the last 15 copies (text
+  and images) so they can be pasted later. It's stored encrypted (images in the app's
+  private files) on the phone only and never sent anywhere. Clips Android marks as
+  sensitive (e.g. from password managers) and copies made while a password field is
+  focused are skipped.
 
 ## Dependencies
 

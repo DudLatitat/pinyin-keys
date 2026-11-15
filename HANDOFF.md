@@ -34,7 +34,9 @@
 - Emoji/clipboard restyled like the owner's default keyboard (panel header replaces toolbar,
   big emoji grid, clipboard card grid). "📋 Paste" chip: on keyboard open, only the clip's
   timestamp (ClipDescription) is checked; the text is read only when Paste is tapped.
-  Clipboard history = text pasted through this keyboard (encrypted, max 20).
+  Clipboard history (owner's decision, CLAUDE.md updated): last 15 copies captured with
+  OnPrimaryClipChangedListener; text in encrypted prefs, images copied to filesDir/clips and
+  pasted via commitContent + FileProvider. Sensitive clips and password fields are skipped.
   - Signing: keystore generated; CI signs the release when SIGNING_* Actions secrets are set.
 - No Android SDK in the cloud workspace: app code is compiled only by CI. Read build
   failures from the workflow's job annotations/logs.

@@ -156,9 +156,7 @@ fun KeyboardUi(
     var panelShown by remember { mutableStateOf(Panel.Keys) }
     val togglePanel: (Panel) -> Unit = { p -> panelShown = if (panelShown == p) Panel.Keys else p }
     var emojiTab by remember { mutableStateOf(1) }
-    // What's copied right now: read only when the clipboard panel is opened.
-    var currentClip by remember { mutableStateOf<String?>(null) }
-    LaunchedEffect(panelShown) { if (panelShown == Panel.Clipboard && !sensitive) currentClip = readClipboard() }
+
     // 0 = letters, 1 and 2 = symbol pages.
     var page by remember { mutableStateOf(0) }
     val dark = isSystemInDarkTheme()
@@ -192,11 +190,12 @@ fun KeyboardUi(
                     // No clipboard or editing panel in password fields.
                     Panel.Clipboard -> if (sensitive) Keys(page, { page = it }, shift, onShift, chinese, onToggleChinese, onText, onBackspace, onEnter, onSwitchKeyboard)
                         else {
-                            val cur = currentClip
+                            // Newest copy first (marked "Latest"), then pinned items, then older copies.
+                            val latest = clipHistory.firstOrNull()
                             val items = buildList {
-                                if (!cur.isNullOrEmpty()) add(ClipItem(cur, cur in pinnedClips, current = true))
-                                pinnedClips.filter { it != cur }.forEach { add(ClipItem(it, pinned = true, current = false)) }
-                                clipHistory.filter { it != cur && it !in pinnedClips }.forEach { add(ClipItem(it, pinned = false, current = false)) }
+                                if (latest != null) add(ClipItem(latest, latest in pinnedClips, current = true))
+                                pinnedClips.filter { it != latest }.forEach { add(ClipItem(it, pinned = true, current = false)) }
+                                clipHistory.drop(1).filter { it !in pinnedClips }.forEach { add(ClipItem(it, pinned = false, current = false)) }
                             }
                             ClipboardGrid(
                                 items,

@@ -78,8 +78,10 @@ class PinyinKeysService : InputMethodService(),
     /** Things pasted with this keyboard, newest first (only text the user chose to paste). */
     private val clipHistory = mutableStateOf<List<String>>(emptyList())
     private val showPasteChip = mutableStateOf(false)
-    /** Copy time of the clip we last offered, so the same copy isn't offered twice. */
-    private var offeredClipTime = 0L
+    /** The newest copy, offered by the Paste button. */
+    private var latestClip: String? = null
+    private var lastSeenClipTime = 0L
+    private val clipListener = android.content.ClipboardManager.OnPrimaryClipChangedListener { onClipChanged() }
     private val practiceState = mutableStateOf<PracticeState>(PracticeState.Idle)
     private var strictTones = false
 
@@ -98,6 +100,8 @@ class PinyinKeysService : InputMethodService(),
             pinnedClips.value = s.pinnedClips
             clipHistory.value = s.clipHistory
         }
+        // Get told about each new copy (Android allows this for the keyboard in use).
+        getSystemService(android.content.ClipboardManager::class.java)?.addPrimaryClipChangedListener(clipListener)
         savedStateController.performRestore(null)
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_CREATE)
     }
@@ -146,7 +150,7 @@ class PinyinKeysService : InputMethodService(),
                     readClipboard = ::readClipboard,
                     pinnedClips = pinnedClips.value,
                     clipHistory = clipHistory.value,
-                    onPaste = ::pasteText,
+                    onPaste = ::pasteEntry,
                     onPin = { t -> updatePinned(listOf(t) + pinnedClips.value) },
                     onUnpin = { t -> updatePinned(pinnedClips.value - t) },
                     onDeleteClip = { t -> updateHistory(clipHistory.value - t) },
@@ -187,6 +191,7 @@ class PinyinKeysService : InputMethodService(),
     }
 
     override fun onDestroy() {
+        getSystemService(android.content.ClipboardManager::class.java)?.removePrimaryClipChangedListener(clipListener)
         super.onDestroy()
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_DESTROY)
         store.clear()
@@ -310,35 +315,97 @@ class PinyinKeysService : InputMethodService(),
         clearAssist()
         currentInputConnection?.commitText(text, 1)
         showPasteChip.value = false
-        updateHistory(listOf(text) + clipHistory.value)
         updateAutoCaps()
     }
 
+    /** Pastes a history entry: text directly, an image through the app's image support. */
+    private fun pasteEntry(entry: String) {
+        showPasteChip.value = false
+        val file = Clips.imageFile(this, entry)
+        if (file == null) { pasteText(entry); return }
+        if (!file.exists()) { toast("That image is no longer available."); return }
+        val info = currentInputEditorInfo ?: return
+        val accepted = androidx.core.view.inputmethod.EditorInfoCompat.getContentMimeTypes(info)
+        if (accepted.none { android.content.ClipDescription.compareMimeTypes("image/png", it) }) {
+            toast("This app doesn't accept pasted images.")
+            return
+        }
+        val uri = androidx.core.content.FileProvider.getUriForFile(this, "$packageName.clips", file)
+        val content = androidx.core.view.inputmethod.InputContentInfoCompat(
+            uri, android.content.ClipDescription("image", arrayOf("image/png")), null,
+        )
+        androidx.core.view.inputmethod.InputConnectionCompat.commitContent(
+            currentInputConnection ?: return, info, content,
+            androidx.core.view.inputmethod.InputConnectionCompat.INPUT_CONTENT_GRANT_READ_URI_PERMISSION, null,
+        )
+    }
+
+    private fun toast(msg: String) = android.widget.Toast.makeText(this, msg, android.widget.Toast.LENGTH_SHORT).show()
+
+    /** Is the current clip marked sensitive (passwords etc.)? Android 13+ sets this flag. */
+    private fun isSensitiveClip(desc: android.content.ClipDescription): Boolean =
+        desc.extras?.getBoolean("android.content.extra.IS_SENSITIVE") == true
+
     /**
-     * Checks only WHEN the clipboard last changed (its description, not its text),
-     * and shows a Paste button if that was within the last minute. The text itself is
-     * read only if the user taps Paste (CLAUDE.md: clipboard read on explicit action).
+     * A new copy happened: save it to the history (text, or a private copy of an image)
+     * and offer it with the Paste button. Skips sensitive clips and password fields.
      */
+    private fun onClipChanged() {
+        if (sensitiveField.value) return
+        val cm = getSystemService(android.content.ClipboardManager::class.java) ?: return
+        val desc = cm.primaryClipDescription ?: return
+        if (isSensitiveClip(desc)) return
+        lastSeenClipTime = desc.timestamp
+        val clip = cm.primaryClip ?: return
+        if (clip.itemCount == 0) return
+        val item = clip.getItemAt(0)
+        lifecycleScope.launch {
+            val entry = withContext(Dispatchers.IO) {
+                val uri = item.uri
+                if (uri != null && (0 until desc.mimeTypeCount).any { desc.getMimeType(it).startsWith("image/") }) {
+                    saveImage(uri)
+                } else {
+                    item.coerceToText(this@PinyinKeysService)?.toString()
+                        ?.takeIf { it.isNotBlank() && it.length <= 5000 }
+                }
+            } ?: return@launch
+            latestClip = entry
+            updateHistory(listOf(entry) + clipHistory.value)
+            showPasteChip.value = true
+        }
+    }
+
+    /** Copies a clipboard image into private storage (the original link expires). */
+    private fun saveImage(uri: android.net.Uri): String? = runCatching {
+        val name = "clip_${System.currentTimeMillis()}.png"
+        val out = java.io.File(Clips.dir(this), name)
+        val bitmap = contentResolver.openInputStream(uri)?.use { android.graphics.BitmapFactory.decodeStream(it) }
+            ?: return null
+        out.outputStream().use { bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
+        Clips.imageEntry(name)
+    }.getOrNull()
+
+    /** On keyboard open: catch a copy made while the keyboard wasn't running. */
     private fun checkRecentCopy() {
         showPasteChip.value = false
         if (sensitiveField.value) return
         val cm = getSystemService(android.content.ClipboardManager::class.java) ?: return
         val desc = cm.primaryClipDescription ?: return
-        val time = desc.timestamp
-        val isText = desc.hasMimeType("text/*")
-        if (isText && time != offeredClipTime && System.currentTimeMillis() - time < 60_000) {
-            offeredClipTime = time
-            showPasteChip.value = true
+        if (desc.timestamp != lastSeenClipTime && System.currentTimeMillis() - desc.timestamp < 60_000) {
+            onClipChanged()
         }
     }
 
     private fun pasteFromChip() {
         showPasteChip.value = false
-        readClipboard()?.let(::pasteText)
+        latestClip?.let(::pasteEntry)
     }
 
     private fun updateHistory(list: List<String>) {
-        val updated = list.distinct().filter { it.length <= 2000 }.take(20)
+        val updated = list.distinct().take(Clips.MAX_HISTORY)
+        // Delete image files that dropped out of the history and aren't pinned.
+        (clipHistory.value - updated.toSet() - pinnedClips.value.toSet())
+            .mapNotNull { Clips.imageFile(this, it) }.forEach { it.delete() }
         clipHistory.value = updated
         lifecycleScope.launch(Dispatchers.IO) { Settings(this@PinyinKeysService).clipHistory = updated }
     }
