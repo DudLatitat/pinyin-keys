@@ -285,7 +285,7 @@ private fun Keys(
 ) {
     val kb = LocalKb.current
     Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
-        KeyRow { NUMBER_ROW.forEach { c -> Key(c.toString(), preview = true) { onText(c.toString()) } } }
+        KeyRow { NUMBER_ROW.forEach { c -> Key(c.toString(), preview = true, height = NUMBER_KEY_HEIGHT, fontSize = 19) { onText(c.toString()) } } }
         if (page == 0) {
             LETTER_ROWS.forEachIndexed { i, row ->
                 KeyRow {
@@ -338,7 +338,7 @@ private fun RowScope.LanguageKey(chinese: Boolean, onClick: () -> Unit) {
         Modifier
             .weight(1f)
             .height(KEY_HEIGHT)
-            .clip(RoundedCornerShape(10.dp))
+            .clip(KEY_SHAPE)
             .background(kb.functionKey)
             .clickable {
                 view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
@@ -359,6 +359,9 @@ private fun RowScope.LanguageKey(chinese: Boolean, onClick: () -> Unit) {
 }
 
 private val KEY_HEIGHT = 42.dp
+private val NUMBER_KEY_HEIGHT = 36.dp
+/** Slightly rounded, mostly square corners, like a standard keyboard. */
+private val KEY_SHAPE = RoundedCornerShape(6.dp)
 
 /**
  * One key. [preview] shows a bigger copy of the letter above your finger while pressed;
@@ -373,6 +376,8 @@ private fun RowScope.Key(
     repeat: Boolean = false,
     function: Boolean = false,
     labelColor: Color? = null,
+    height: Dp = KEY_HEIGHT,
+    fontSize: Int? = null,
     onClick: () -> Unit,
 ) {
     val kb = LocalKb.current
@@ -394,11 +399,11 @@ private fun RowScope.Key(
         }
     }
     // zIndex: draw a pressed key (and its preview) on top of its neighbours.
-    Box(Modifier.weight(weight).height(KEY_HEIGHT).zIndex(if (pressed) 1f else 0f)) {
+    Box(Modifier.weight(weight).height(height).zIndex(if (pressed) 1f else 0f)) {
         Box(
             Modifier
                 .matchParentSize()
-                .clip(RoundedCornerShape(10.dp))
+                .clip(KEY_SHAPE)
                 .background(if (pressed) kb.pressed else if (function) kb.functionKey else kb.key)
                 .clickable(interactionSource = interaction, indication = null) {
                     if (!repeat) {
@@ -409,7 +414,7 @@ private fun RowScope.Key(
             contentAlignment = Alignment.Center,
         ) {
             // Short labels (letters, symbols) big; words like "ABC" or "1/2" a bit smaller.
-            val size = if (label.length > 1) 17 else 22
+            val size = fontSize ?: if (label.length > 1) 17 else 22
             Text(label, fontSize = size.sp, color = labelColor ?: kb.label)
         }
         if (preview && pressed) {
@@ -418,7 +423,7 @@ private fun RowScope.Key(
                     .align(Alignment.TopCenter)
                     .offset(y = (-50).dp)
                     .size(width = 46.dp, height = 48.dp)
-                    .clip(RoundedCornerShape(10.dp))
+                    .clip(KEY_SHAPE)
                     .background(kb.pressed),
                 contentAlignment = Alignment.Center,
             ) {
