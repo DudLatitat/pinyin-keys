@@ -6,7 +6,8 @@ import com.pinyinkeys.ime.translate.TranslationResult
 sealed interface AssistState {
     data object Idle : AssistState
     data object Loading : AssistState
-    data class Result(val result: TranslationResult) : AssistState
+    /** [complete] is false while sentences are still streaming in. */
+    data class Result(val result: TranslationResult, val complete: Boolean = true) : AssistState
     data class Error(val message: String) : AssistState
 }
 

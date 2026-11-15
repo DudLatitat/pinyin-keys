@@ -60,6 +60,7 @@ class PinyinKeysService : InputMethodService(),
     /** What the Assist panel shows. Compose redraws whenever this changes. */
     private val assistState = mutableStateOf<AssistState>(AssistState.Idle)
     private var translateJob: Job? = null
+    private val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
 
     private val mode = mutableStateOf(Mode.Assist)
 
@@ -207,7 +208,9 @@ class PinyinKeysService : InputMethodService(),
         }
         ic.commitText(text, 1)
         if (shift.value == Shift.On) shift.value = Shift.Off
-        updateAutoCaps()
+        // A letter or digit never starts a sentence, so skip asking the app (that question
+        // goes to the other app and can be slow). Ask only after spaces and punctuation.
+        if (text.length != 1 || !text[0].isLetterOrDigit()) updateAutoCaps()
     }
 
     private fun backspace() {
@@ -359,9 +362,23 @@ class PinyinKeysService : InputMethodService(),
         assistState.value = AssistState.Loading
         // lifecycleScope is cancelled automatically when the keyboard service is destroyed.
         translateJob = lifecycleScope.launch {
+            val job = coroutineContext[Job]
+            val partial = mutableListOf<com.pinyinkeys.ime.translate.Sentence>()
             assistState.value = try {
                 // Dispatchers.IO: network must not run on the main (UI) thread.
-                AssistState.Result(withContext(Dispatchers.IO) { service.translate(text) })
+                val result = withContext(Dispatchers.IO) {
+                    service.translate(text) { sentence ->
+                        // Called on the network thread as each sentence arrives: show it right away.
+                        mainHandler.post {
+                            if (translateJob != job || job?.isActive != true) return@post
+                            partial += sentence
+                            assistState.value = AssistState.Result(
+                                com.pinyinkeys.ime.translate.TranslationResult(partial.toList()), complete = false,
+                            )
+                        }
+                    }
+                }
+                AssistState.Result(result)
             } catch (e: TranslationException) {
                 AssistState.Error(e.userMessage)
             } catch (e: Exception) {
@@ -561,7 +578,9 @@ class PinyinKeysService : InputMethodService(),
 
     /** Replaces everything in the text field with the Chinese. */
     private fun insertChinese() {
-        val result = (assistState.value as? AssistState.Result)?.result ?: return
+        val state = assistState.value as? AssistState.Result ?: return
+        if (!state.complete) return
+        val result = state.result
         replaceField(result.sentences.joinToString("") { it.hanzi })
         assistState.value = AssistState.Idle
     }

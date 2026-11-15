@@ -6,8 +6,12 @@ package com.pinyinkeys.ime.translate
  * would be another class implementing this, plus a picker in settings.
  */
 interface TranslationService {
-    /** Blocking network call: run it off the main thread. Throws [TranslationException]. */
-    fun translate(english: String): TranslationResult
+    /**
+     * Blocking network call: run it off the main thread. Throws [TranslationException].
+     * [onSentence] is called (on the calling thread) as each sentence finishes arriving,
+     * before the full result is returned.
+     */
+    fun translate(english: String, onSentence: (Sentence) -> Unit = {}): TranslationResult
 
     /** Structure chips and per-character syllables for one sentence. Blocking. */
     fun details(sentence: Sentence): SentenceDetails

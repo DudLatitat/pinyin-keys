@@ -22,6 +22,11 @@
 - Chinese typing mode ("En/中" key): pinyin composing text + candidate bar from
   PinyinDictionary (exact, prefix completions, then leading-part matches). Space takes the
   top candidate, enter keeps raw letters, Chinese punctuation in this mode.
+- Look: restyled like a standard phone keyboard (KbColors in KeyboardUi.kt). Globe key removed
+  at the owner's request; switching keyboards uses the system's keyboard button.
+- Speed: keys fire on touch-down (pointerInput), profileinstaller added, auto-caps only asks
+  the app after non-letters, HTTP connection reused (no disconnect), and Translate streams
+  (SSE) so cards appear one by one (JsonItemScanner). Insert waits for the full result.
   - Signing: keystore generated; CI signs the release when SIGNING_* Actions secrets are set.
 - No Android SDK in the cloud workspace: app code is compiled only by CI. Read build
   failures from the workflow's job annotations/logs.

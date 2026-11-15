@@ -58,6 +58,9 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
     implementation("androidx.savedstate:savedstate-ktx:1.2.1")
     implementation("androidx.core:core-ktx:1.15.0")
+    // Installs the ahead-of-time compile list that Compose ships, so the keyboard runs
+    // compiled code from the start (Play Store does this automatically; sideloads don't).
+    implementation("androidx.profileinstaller:profileinstaller:1.4.1")
     // JSON parsing for the translation API (official Kotlin library, no tracking).
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
     // Background work (network calls) without freezing the keyboard.

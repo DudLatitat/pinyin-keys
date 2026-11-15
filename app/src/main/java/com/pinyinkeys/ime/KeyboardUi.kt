@@ -50,6 +50,10 @@ import kotlinx.coroutines.delay
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -212,7 +216,8 @@ private fun Toolbar(
             Pill(if (mode == Mode.Assist) "Assist ⇄" else "Practice ⇄", selected = true) {
                 onMode(if (mode == Mode.Assist) Mode.Practice else Mode.Assist)
             }
-            val loading = assist is AssistState.Loading || practice is PracticeState.Loading
+            val loading = assist is AssistState.Loading || practice is PracticeState.Loading ||
+                (assist is AssistState.Result && !assist.complete)
             when (mode) {
                 Mode.Assist -> Pill("Translate", enabled = !loading, onClick = onTranslate)
                 Mode.Practice -> Pill(if (practice is PracticeState.Active) "Restart" else "Translate",
@@ -220,7 +225,7 @@ private fun Toolbar(
             }
             if (loading) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = kb.accent)
             Spacer(Modifier.weight(1f))
-            if (mode == Mode.Assist && assist is AssistState.Result) Pill("Insert", accent = true, onClick = onInsertChinese)
+            if (mode == Mode.Assist && assist is AssistState.Result && assist.complete) Pill("Insert", accent = true, onClick = onInsertChinese)
             if (mode == Mode.Practice && practice is PracticeState.Active && !practice.done) Pill("Hint", onClick = onHint)
         } else {
             Spacer(Modifier.weight(1f))
@@ -380,21 +385,30 @@ private fun RowScope.Key(
     onClick: () -> Unit,
 ) {
     val kb = LocalKb.current
-    val interaction = remember { MutableInteractionSource() }
-    val pressed by interaction.collectIsPressedAsState()
+    // Our own pressed state: the key types on touch-DOWN (like other keyboards), not on
+    // release, which is what makes typing feel immediate.
+    var pressed by remember { mutableStateOf(false) }
     val view = LocalView.current
     val latestOnClick by rememberUpdatedState(onClick)
     if (repeat) {
-        // While held: fire once, wait, then repeat quickly until released.
+        // Held down: after a pause, keep repeating until released.
         LaunchedEffect(pressed) {
             if (!pressed) return@LaunchedEffect
-            view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
-            latestOnClick()
             delay(400)
             while (true) {
                 latestOnClick()
                 delay(60)
             }
+        }
+    }
+    val touch = Modifier.pointerInput(Unit) {
+        awaitEachGesture {
+            awaitFirstDown(requireUnconsumed = false)
+            pressed = true
+            view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+            latestOnClick()
+            waitForUpOrCancellation()
+            pressed = false
         }
     }
     // zIndex: draw a pressed key (and its preview) on top of its neighbours.
@@ -404,12 +418,7 @@ private fun RowScope.Key(
                 .matchParentSize()
                 .clip(KEY_SHAPE)
                 .background(if (pressed) kb.pressed else if (function) kb.functionKey else kb.key)
-                .clickable(interactionSource = interaction, indication = null) {
-                    if (!repeat) {
-                        view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
-                        onClick()
-                    }
-                },
+                .then(touch),
             contentAlignment = Alignment.Center,
         ) {
             // Short labels (letters, symbols) big; words like "ABC" or "1/2" a bit smaller.

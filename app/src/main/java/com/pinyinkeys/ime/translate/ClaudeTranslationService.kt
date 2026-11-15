@@ -24,8 +24,14 @@ class ClaudeTranslationService(
 
     private val json = Json { ignoreUnknownKeys = true }
 
-    override fun translate(english: String): TranslationResult {
-        val text = call(Prompts.TRANSLATE_SYSTEM, english, Prompts.TRANSLATE_SCHEMA, maxTokens = 8000)
+    override fun translate(english: String, onSentence: (Sentence) -> Unit): TranslationResult {
+        // Stream the reply and hand over each sentence as soon as it's complete.
+        val scanner = JsonItemScanner()
+        val text = call(Prompts.TRANSLATE_SYSTEM, english, Prompts.TRANSLATE_SCHEMA, maxTokens = 8000) { delta ->
+            scanner.append(delta).forEach { item ->
+                runCatching { json.decodeFromString(Sentence.serializer(), item) }.getOrNull()?.let(onSentence)
+            }
+        }
         return try {
             json.decodeFromString(TranslationResult.serializer(), text)
         } catch (e: Exception) {
@@ -56,8 +62,18 @@ class ClaudeTranslationService(
         }.ifEmpty { throw TranslationException("Couldn't load explanation. Try again.") }
     }
 
-    /** One Messages API request with structured output. Returns the JSON text the model produced. */
-    private fun call(system: String, user: String, schema: String, maxTokens: Int): String {
+    /**
+     * One Messages API request with structured output. Returns the JSON text the model
+     * produced. With [onDelta], the reply is streamed (server-sent events) and each new
+     * piece of text is passed to [onDelta] as it arrives.
+     */
+    private fun call(
+        system: String,
+        user: String,
+        schema: String,
+        maxTokens: Int,
+        onDelta: ((String) -> Unit)? = null,
+    ): String {
         val body = buildJsonObject {
             put("model", model)
             put("max_tokens", maxTokens)
@@ -80,9 +96,16 @@ class ClaudeTranslationService(
                     put("schema", json.parseToJsonElement(schema))
                 })
             })
+            if (onDelta != null) put("stream", true)
         }
 
-        val raw = post(body.toString())
+        return request(body.toString()) { reader ->
+            if (onDelta != null) readStream(reader, onDelta) else readWhole(reader.readText())
+        }
+    }
+
+    /** Non-streamed reply: one JSON object with the text inside. */
+    private fun readWhole(raw: String): String {
         val response = try {
             json.parseToJsonElement(raw).jsonObject
         } catch (e: Exception) {
@@ -98,11 +121,7 @@ class ClaudeTranslationService(
                 "Couldn't translate (E2: $kind, $start, ${raw.length} chars, ${lastContentType ?: "no type"}). Try again.", e
             )
         }
-
-        when (response["stop_reason"]?.jsonPrimitive?.content) {
-            "refusal" -> throw TranslationException("The model declined this text.")
-            "max_tokens" -> throw TranslationException("Text too long. Try a shorter message.")
-        }
+        checkStop(response["stop_reason"]?.jsonPrimitive?.content)
         return response["content"]?.jsonArray
             ?.map { it.jsonObject }
             ?.firstOrNull { it["type"]?.jsonPrimitive?.content == "text" }
@@ -112,10 +131,60 @@ class ClaudeTranslationService(
             )
     }
 
+    /**
+     * Streamed reply: lines of "data: {...}" events. Text arrives in
+     * content_block_delta events of type text_delta; the stop reason in message_delta.
+     */
+    private fun readStream(reader: java.io.BufferedReader, onDelta: (String) -> Unit): String {
+        val text = StringBuilder()
+        var stop: String? = null
+        while (true) {
+            val line = reader.readLine() ?: break
+            if (!line.startsWith("data:")) continue
+            val event = runCatching { json.parseToJsonElement(line.removePrefix("data:").trim()).jsonObject }
+                .getOrNull() ?: continue
+            when (event["type"]?.jsonPrimitive?.content) {
+                "content_block_delta" -> {
+                    val delta = event["delta"]?.jsonObject ?: continue
+                    if (delta["type"]?.jsonPrimitive?.content == "text_delta") {
+                        val piece = delta["text"]?.jsonPrimitive?.content ?: continue
+                        text.append(piece)
+                        onDelta(piece)
+                    }
+                }
+                "message_delta" -> stop = event["delta"]?.jsonObject?.get("stop_reason")?.jsonPrimitive?.content ?: stop
+                "error" -> {
+                    val type = event["error"]?.jsonObject?.get("type")?.jsonPrimitive?.content
+                    Log.w(TAG, "Stream error: $type")
+                    throw TranslationException(
+                        if (type == "overloaded_error") "Translation service is busy. Try again."
+                        else "Couldn't translate (stream: $type). Try again."
+                    )
+                }
+                "message_stop" -> break
+            }
+        }
+        checkStop(stop)
+        if (text.isEmpty()) throw TranslationException("Couldn't translate (E3: no text, stop=$stop). Try again.")
+        return text.toString()
+    }
+
+    private fun checkStop(stop: String?) {
+        when (stop) {
+            "refusal" -> throw TranslationException("The model declined this text.")
+            "max_tokens" -> throw TranslationException("Text too long. Try a shorter message.")
+        }
+    }
+
     /** Content type of the last reply, for error messages only. */
     private var lastContentType: String? = null
 
-    private fun post(body: String): String {
+    /**
+     * Sends [body] and hands the reply to [read]. The connection is not closed afterwards:
+     * Android keeps it open for a short while and reuses it for the next request, which
+     * skips a new secure handshake (about 0.3-0.5 s).
+     */
+    private fun <T> request(body: String, read: (java.io.BufferedReader) -> T): T {
         val url = URL(baseUrl.trimEnd('/') + "/v1/messages")
         if (url.protocol != "https") throw TranslationException("Base URL must start with https://")
         val conn = try { (url.openConnection() as HttpURLConnection).apply {
@@ -135,7 +204,8 @@ class ClaudeTranslationService(
             conn.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }
             val code = conn.responseCode
             if (code !in 200..299) {
-                // Log the status only, never the body (it can echo our text back).
+                // Read and drop the error body so the connection can be reused; never log it.
+                runCatching { conn.errorStream?.use { it.readBytes() } }
                 Log.w(TAG, "API error HTTP $code")
                 throw TranslationException(
                     when (code) {
@@ -148,12 +218,11 @@ class ClaudeTranslationService(
                 )
             }
             lastContentType = conn.contentType?.substringBefore(';')
-            return conn.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
+            return conn.inputStream.bufferedReader(Charsets.UTF_8).use(read)
         } catch (e: IOException) {
             Log.w(TAG, "Network error: ${e.javaClass.simpleName}")
+            conn.disconnect()  // a broken connection must not be reused
             throw TranslationException("No connection. Try again.", e)
-        } finally {
-            conn.disconnect()
         }
     }
 
