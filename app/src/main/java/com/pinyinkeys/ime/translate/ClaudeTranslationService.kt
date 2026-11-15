@@ -58,7 +58,10 @@ class ClaudeTranslationService(
                     put("content", user)
                 })
             })
-            // effort=low: these tasks don't need deep reasoning, and reasoning is billed.
+            // No thinking step: translation/explanations don't need it, and it was the main
+            // source of waiting (and is billed as output). Allowed at effort "low" on Haiku.
+            put("thinking", buildJsonObject { put("type", "disabled") })
+            // effort=low: keep replies lean.
             // format=json_schema: the API guarantees the reply matches our schema.
             put("output_config", buildJsonObject {
                 put("effort", "low")
