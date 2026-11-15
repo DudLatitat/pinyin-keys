@@ -163,6 +163,7 @@ fun KeyboardUi(
     correction: Pair<String, String>?,
     onUndoCorrection: () -> Unit,
     onSpeak: (String) -> Unit,
+    guidedDone: Int,
     onEdit: (EditAction) -> Unit,
     onOpenSettings: () -> Unit,
     numberPad: NumberPadKind?,
@@ -207,7 +208,7 @@ fun KeyboardUi(
             }
             val panel: @Composable () -> Unit = {
                 if (!sensitive) when (mode) {
-                    Mode.Assist -> AssistPanel(assist, detailsStates, onExpand, whyStates, onWhy, savedStates, onSave)
+                    Mode.Assist -> AssistPanel(assist, detailsStates, onExpand, whyStates, onWhy, savedStates, onSave, guidedDone)
                     Mode.Practice -> PracticePanel(practice)
                 }
             }
@@ -568,6 +569,7 @@ private fun AssistPanel(
     onWhy: (Sentence) -> Unit,
     savedStates: Map<Sentence, Load<Unit>>,
     onSave: (Sentence) -> Unit,
+    guidedDone: Int,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         if (state is AssistState.Error) Text(state.message, color = MaterialTheme.colorScheme.error, fontSize = 14.sp)
@@ -580,7 +582,7 @@ private fun AssistPanel(
                 state.result.sentences.forEachIndexed { i, sentence ->
                     // key(): remember each card's expanded state separately, reset on a new translation.
                     androidx.compose.runtime.key(state.result, i) {
-                        SentenceCard(sentence, detailsStates[sentence], whyStates[sentence], savedStates[sentence], { onExpand(sentence) }, { onWhy(sentence) }, { onSave(sentence) })
+                        SentenceCard(sentence, detailsStates[sentence], whyStates[sentence], savedStates[sentence], { onExpand(sentence) }, { onWhy(sentence) }, { onSave(sentence) }, done = i < guidedDone)
                     }
                 }
             }
@@ -602,6 +604,7 @@ private fun SentenceCard(
     onExpand: () -> Unit,
     onWhy: () -> Unit,
     onSave: () -> Unit,
+    done: Boolean = false,
 ) {
     var expanded by remember { mutableStateOf(false) }
     Column(
@@ -618,7 +621,11 @@ private fun SentenceCard(
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                Text(sentence.hanzi, fontSize = 24.sp, color = MaterialTheme.colorScheme.onSurface)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(sentence.hanzi, fontSize = 24.sp, color = MaterialTheme.colorScheme.onSurface)
+                    // ✓ once you've typed this sentence yourself in 中 mode.
+                    if (done) Text("  ✓", fontSize = 20.sp, color = androidx.compose.ui.graphics.Color(0xFF34C759))
+                }
                 Text(sentence.pinyin, fontSize = 15.sp, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Medium)
             }
             // 🔊 reads the Chinese aloud.

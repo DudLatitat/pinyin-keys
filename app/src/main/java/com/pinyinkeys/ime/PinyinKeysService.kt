@@ -106,6 +106,14 @@ class PinyinKeysService : InputMethodService(),
     private val hideCorrection = Runnable { correctionNotice.value = null }
 
     private var speech: Speech? = null
+
+    // --- "Type it yourself": after translating, tap 中 to type the Chinese in pinyin ---
+    /** The translated sentences you're typing, or null when not in this mode. */
+    private var guidedTarget: List<String>? = null
+    /** How many sentences you've typed correctly so far (cards show ✓). */
+    private val guidedDone = mutableStateOf(0)
+    /** The part of the translation still to type (Chinese characters only). */
+    private var guidedRemaining = ""
     /** A new screenshot waiting to be offered; it's only copied if Paste is tapped. */
     private var pendingScreenshot: android.net.Uri? = null
     private var offeredScreenshot: android.net.Uri? = null
@@ -200,6 +208,7 @@ class PinyinKeysService : InputMethodService(),
                     correction = correctionNotice.value,
                     onUndoCorrection = ::undoAutocorrect,
                     onSpeak = ::speak,
+                    guidedDone = guidedDone.value,
                     onPasteChip = ::pasteFromChip,
                     onEdit = ::edit,
                     onOpenSettings = ::openSettings,
@@ -222,6 +231,7 @@ class PinyinKeysService : InputMethodService(),
             assistState.value = AssistState.Idle
             detailsStates.clear(); whyStates.clear(); savedStates.clear()
             practiceState.value = PracticeState.Idle
+            endGuided()
         }
         setComposing("")
         shift.value = Shift.Off
@@ -282,6 +292,7 @@ class PinyinKeysService : InputMethodService(),
      * text), so typing clears it. Also cancels a translation still in progress.
      */
     private fun clearAssist() {
+        endGuided()
         if (assistState.value == AssistState.Idle) return
         translateJob?.cancel()
         assistState.value = AssistState.Idle
@@ -310,6 +321,7 @@ class PinyinKeysService : InputMethodService(),
                 commitFirstCandidate()
             }
             ic.commitText(CHINESE_PUNCTUATION[text] ?: text, 1)
+            refreshGuided()
             return
         }
 
@@ -361,6 +373,7 @@ class PinyinKeysService : InputMethodService(),
         }
         if (!chinese.value) clearAssist()
         val ic = currentInputConnection ?: return
+        if (guidedTarget != null) mainHandler.post { refreshGuided() }
         if (undoAutocorrect()) return
         if (currentWord.isNotEmpty()) currentWord = currentWord.dropLast(1)
         if (currentWord.isEmpty()) suggestions.value = emptyList() else updateSuggestions()
@@ -726,6 +739,30 @@ class PinyinKeysService : InputMethodService(),
         startActivity(Intent(this, SetupActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
     }
 
+    private fun onlyHan(s: String) = s.filter { Character.UnicodeScript.of(it.code) == Character.UnicodeScript.HAN }
+
+    /** Compares what's typed so far (the field was cleared at the start) with the translation. */
+    private fun refreshGuided() {
+        val target = guidedTarget ?: return
+        val typed = onlyHan(currentInputConnection?.getTextBeforeCursor(2000, 0)?.toString() ?: "")
+        val all = onlyHan(target.joinToString(""))
+        val same = typed.zip(all).takeWhile { (a, b) -> a == b }.count()
+        guidedRemaining = all.drop(same)
+        var pos = 0
+        var done = 0
+        for (t in target) {
+            val len = onlyHan(t).length
+            if (same >= pos + len) { done++; pos += len } else break
+        }
+        guidedDone.value = done
+    }
+
+    private fun endGuided() {
+        guidedTarget = null
+        guidedRemaining = ""
+        guidedDone.value = 0
+    }
+
     // --- Shift and Chinese mode ---
 
     /** Shift key: off -> one capital -> caps lock -> off. */
@@ -752,6 +789,16 @@ class PinyinKeysService : InputMethodService(),
         }
         chinese.value = !chinese.value
         shift.value = Shift.Off
+        // With a finished translation on screen, switching to 中 means "let me type it":
+        // clear the English and guide the typing. Switching back ends it.
+        val shown = assistState.value as? AssistState.Result
+        if (chinese.value && shown != null && shown.complete) {
+            replaceField("")
+            guidedTarget = shown.result.sentences.map { it.hanzi }
+            refreshGuided()
+        } else if (!chinese.value) {
+            endGuided()
+        }
         if (chinese.value && dictionary == null) {
             // Load the dictionary in the background the first time Chinese mode is used.
             lifecycleScope.launch {
@@ -769,7 +816,12 @@ class PinyinKeysService : InputMethodService(),
      */
     private fun setComposing(letters: String) {
         composing.value = letters
-        candidates.value = dictionary?.candidates(letters) ?: emptyList()
+        val found = dictionary?.candidates(letters) ?: emptyList()
+        // Guided: put suggestions that continue the translation first (longest first).
+        candidates.value = if (guidedTarget != null && guidedRemaining.isNotEmpty()) {
+            val (match, rest) = found.partition { guidedRemaining.startsWith(onlyHan(it.word)) && onlyHan(it.word).isNotEmpty() }
+            match.sortedByDescending { it.word.length } + rest
+        } else found
         val ic = currentInputConnection ?: return
         if (letters.isEmpty()) ic.commitText("", 1) else ic.setComposingText(letters, 1)
     }
@@ -780,6 +832,7 @@ class PinyinKeysService : InputMethodService(),
         val ic = currentInputConnection ?: return
         ic.commitText(c.word, 1)  // replaces the underlined pinyin
         composing.value = ""
+        refreshGuided()
         setComposing(rest)
     }
 
