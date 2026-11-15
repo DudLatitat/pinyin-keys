@@ -33,6 +33,7 @@ class EnglishDictionary private constructor(
             if (best == null || f > best.second) best = w to f
         }
         return best?.first
+    }
 
     /**
      * Up to [n] suggestions for a partly typed [typed] word, best first: likely
