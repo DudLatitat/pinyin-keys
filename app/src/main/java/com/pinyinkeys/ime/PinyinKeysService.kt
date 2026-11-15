@@ -367,7 +367,8 @@ class PinyinKeysService : InputMethodService(),
             } catch (e: Exception) {
                 if (e is kotlinx.coroutines.CancellationException) throw e
                 Log.w(TAG, "Translate failed: ${e.javaClass.simpleName}")
-                AssistState.Error("Couldn't translate. Try again.")
+                // Release builds rename classes, so also note what kind of error it was.
+                AssistState.Error("Couldn't translate (E4: ${errorKind(e)}). Try again.")
             }
         }
     }
@@ -425,6 +426,16 @@ class PinyinKeysService : InputMethodService(),
                 }
             }
         }
+    }
+
+    /** A short, content-free description of an unexpected error, for the on-screen message. */
+    private fun errorKind(e: Throwable): String = when (e) {
+        is java.io.IOException -> "network"
+        is SecurityException -> "permission"
+        is IllegalStateException -> "state"
+        is IllegalArgumentException -> "argument"
+        is NullPointerException -> "null"
+        else -> e.javaClass.simpleName.take(20)
     }
 
     /** Runs [block] off the main thread and turns the outcome (or any error) into a [Load]. */

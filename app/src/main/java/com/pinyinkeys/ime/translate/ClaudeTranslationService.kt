@@ -30,7 +30,7 @@ class ClaudeTranslationService(
             json.decodeFromString(TranslationResult.serializer(), text)
         } catch (e: Exception) {
             Log.w(TAG, "Bad JSON from API: ${e.javaClass.simpleName}")
-            throw TranslationException("Couldn't translate. Try again.", e)
+            throw TranslationException("Couldn't translate (E1: unexpected reply shape). Try again.", e)
         }.also {
             if (it.sentences.isEmpty()) throw TranslationException("Nothing to translate.")
         }
@@ -87,7 +87,7 @@ class ClaudeTranslationService(
         } catch (e: TranslationException) {
             throw e
         } catch (e: Exception) {
-            throw TranslationException("Couldn't translate. Try again.", e)
+            throw TranslationException("Couldn't translate (E2: unreadable reply). Try again.", e)
         }
 
         when (response["stop_reason"]?.jsonPrimitive?.content) {
@@ -98,7 +98,9 @@ class ClaudeTranslationService(
             ?.map { it.jsonObject }
             ?.firstOrNull { it["type"]?.jsonPrimitive?.content == "text" }
             ?.get("text")?.jsonPrimitive?.content
-            ?: throw TranslationException("Couldn't translate. Try again.")
+            ?: throw TranslationException(
+                "Couldn't translate (E3: no text, stop=${response["stop_reason"]?.jsonPrimitive?.content}). Try again."
+            )
     }
 
     private fun post(body: String): String {

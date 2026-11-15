@@ -314,10 +314,9 @@ private fun Keys(
         }
         KeyRow {
             Key(if (page == 0) "!#1" else "ABC", 1.4f, function = true) { onPage(if (page == 0) 1 else 0) }
-            Key("🌐", 1f, function = true, onClick = onSwitchKeyboard)
             LanguageKey(chinese, onToggleChinese)
             Key(if (chinese) "，" else ",", 1f) { onText(",") }
-            Key("␣", 3.4f) { onText(" ") }
+            Key("␣", 4.4f) { onText(" ") }
             Key(if (chinese) "。" else ".", 1f) { onText(".") }
             Key("⏎", 1.4f, function = true, onClick = onEnter)
         }
