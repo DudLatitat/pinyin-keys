@@ -47,6 +47,9 @@ import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.zIndex
 import kotlinx.coroutines.delay
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.ui.graphics.Color
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -60,7 +63,36 @@ import androidx.compose.ui.unit.sp
 
 private val NUMBER_ROW = "1234567890"
 private val LETTER_ROWS = listOf("qwertyuiop", "asdfghjkl", "zxcvbnm")
-private val SYMBOL_ROWS = listOf("@#\$%&-+()/", "*\"':;!?_", "=[]{}<>~")
+private val SYMBOL_PAGES = listOf(
+    listOf("+×÷=/_<>[]", "!@#\$%^&*()", "-'\":;,?"),
+    listOf("`~\\|{}€£¥•", "°©®™✓¶§·…¡", "«»¿‰¤¢♪"),
+)
+
+/**
+ * Colors modeled on a typical phone keyboard: black/light-grey background, rounded keys,
+ * and darker "function" keys (shift, backspace, ?123, enter).
+ */
+data class KbColors(
+    val background: Color,
+    val toolbar: Color,
+    val key: Color,
+    val functionKey: Color,
+    val pressed: Color,
+    val label: Color,
+    val accent: Color,
+)
+
+private val DarkKb = KbColors(
+    background = Color(0xFF000000), toolbar = Color(0xFF1B1B1D), key = Color(0xFF3A3A3C),
+    functionKey = Color(0xFF1E1E20), pressed = Color(0xFF5A5A5E), label = Color(0xFFFFFFFF),
+    accent = Color(0xFF7FA6FF),
+)
+private val LightKb = KbColors(
+    background = Color(0xFFE8E9ED), toolbar = Color(0xFFF4F4F6), key = Color(0xFFFFFFFF),
+    functionKey = Color(0xFFC6CAD1), pressed = Color(0xFFB0B4BB), label = Color(0xFF111111),
+    accent = Color(0xFF2F6BFF),
+)
+private val LocalKb = staticCompositionLocalOf { DarkKb }
 
 /** Shift key: off, one capital letter, or caps lock (tap cycles through them). */
 enum class Shift { Off, On, Lock }
@@ -101,53 +133,126 @@ fun KeyboardUi(
     candidates: List<Candidate>,
     onCandidate: (Candidate) -> Unit,
 ) {
-    var symbols by remember { mutableStateOf(false) }
-    val colors = if (isSystemInDarkTheme()) darkColorScheme() else lightColorScheme()
+    // 0 = letters, 1 and 2 = symbol pages.
+    var page by remember { mutableStateOf(0) }
+    val dark = isSystemInDarkTheme()
+    val colors = if (dark) darkColorScheme() else lightColorScheme()
+    val kb = if (dark) DarkKb else LightKb
 
     MaterialTheme(colorScheme = colors) {
-        Surface(color = MaterialTheme.colorScheme.surfaceVariant) {
+      CompositionLocalProvider(LocalKb provides kb) {
+        Surface(color = kb.background) {
+            // While typing pinyin, the suggestion bar takes the toolbar's place (like other keyboards).
+            val toolbar: @Composable () -> Unit = {
+                if (composing.isNotEmpty()) CandidateBar(composing, candidates, onCandidate)
+                else Toolbar(sensitive, mode, onMode, assist, onTranslate, onInsertChinese,
+                    practice, onStartPractice, onHint, onSwitchKeyboard)
+            }
             val panel: @Composable () -> Unit = {
-                if (!sensitive) {
-                    ModeToggle(mode, onMode)
-                    when (mode) {
-                        Mode.Assist -> AssistPanel(assist, onTranslate, onInsertChinese, detailsStates, onExpand, whyStates, onWhy, savedStates, onSave)
-                        Mode.Practice -> PracticePanel(practice, onStartPractice, onHint)
-                    }
+                if (!sensitive) when (mode) {
+                    Mode.Assist -> AssistPanel(assist, detailsStates, onExpand, whyStates, onWhy, savedStates, onSave)
+                    Mode.Practice -> PracticePanel(practice)
                 }
             }
             val keys: @Composable () -> Unit = {
-                if (composing.isNotEmpty()) CandidateBar(composing, candidates, onCandidate)
-                Keys(symbols, { symbols = !symbols }, shift, onShift, chinese, onToggleChinese,
-                    onText, onBackspace, onEnter, onSwitchKeyboard)
+                Keys(page, { page = it }, shift, onShift, chinese, onToggleChinese, onText, onBackspace, onEnter)
             }
             // BoxWithConstraints tells us how wide the keyboard window is.
             BoxWithConstraints(Modifier.fillMaxWidth()) {
                 val width = maxWidth
                 if (width >= 600.dp && !sensitive) {
                     // Wide screen (foldable's inner screen): cards on the left, keys on the right.
-                    Row(Modifier.fillMaxWidth().padding(4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) { panel() }
-                        Column(Modifier.width(minOf(width * 0.55f, 560.dp)), verticalArrangement = Arrangement.spacedBy(6.dp)) { keys() }
+                    Column {
+                        toolbar()
+                        Row(Modifier.fillMaxWidth().padding(6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) { panel() }
+                            Column(Modifier.width(minOf(width * 0.55f, 560.dp))) { keys() }
+                        }
                     }
                 } else {
-                    Column(
-                        Modifier.align(Alignment.Center).widthIn(max = 720.dp).fillMaxWidth().padding(4.dp),
-                        verticalArrangement = Arrangement.spacedBy(6.dp),
-                    ) {
-                        panel()
-                        keys()
+                    Column(Modifier.align(Alignment.Center).widthIn(max = 720.dp).fillMaxWidth()) {
+                        toolbar()
+                        Column(Modifier.padding(horizontal = 6.dp, vertical = 6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            panel()
+                            keys()
+                        }
                     }
                 }
             }
         }
+      }
+    }
+}
+
+/**
+ * The slim bar above the keys: mode switch, Translate (or Restart), the next action
+ * (Insert Chinese / Hint), and a button to switch back to your other keyboard.
+ */
+@Composable
+private fun Toolbar(
+    sensitive: Boolean,
+    mode: Mode,
+    onMode: (Mode) -> Unit,
+    assist: AssistState,
+    onTranslate: () -> Unit,
+    onInsertChinese: () -> Unit,
+    practice: PracticeState,
+    onStartPractice: () -> Unit,
+    onHint: () -> Unit,
+    onSwitchKeyboard: () -> Unit,
+) {
+    val kb = LocalKb.current
+    Row(
+        Modifier.fillMaxWidth().height(48.dp).background(kb.toolbar).padding(horizontal = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        if (!sensitive) {
+            // Tap to switch between Assist and Practice.
+            Pill(if (mode == Mode.Assist) "Assist ⇄" else "Practice ⇄", selected = true) {
+                onMode(if (mode == Mode.Assist) Mode.Practice else Mode.Assist)
+            }
+            val loading = assist is AssistState.Loading || practice is PracticeState.Loading
+            when (mode) {
+                Mode.Assist -> Pill("Translate", enabled = !loading, onClick = onTranslate)
+                Mode.Practice -> Pill(if (practice is PracticeState.Active) "Restart" else "Translate",
+                    enabled = !loading, onClick = onStartPractice)
+            }
+            if (loading) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = kb.accent)
+            Spacer(Modifier.weight(1f))
+            if (mode == Mode.Assist && assist is AssistState.Result) Pill("Insert", accent = true, onClick = onInsertChinese)
+            if (mode == Mode.Practice && practice is PracticeState.Active && !practice.done) Pill("Hint", onClick = onHint)
+        } else {
+            Spacer(Modifier.weight(1f))
+        }
+        Pill("⌨", onClick = onSwitchKeyboard)
+    }
+}
+
+/** A small rounded toolbar button. */
+@Composable
+private fun Pill(text: String, selected: Boolean = false, accent: Boolean = false, enabled: Boolean = true, onClick: () -> Unit) {
+    val kb = LocalKb.current
+    Box(
+        Modifier
+            .height(34.dp)
+            .clip(RoundedCornerShape(17.dp))
+            .background(if (accent) kb.accent else if (selected) kb.key else kb.functionKey)
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(horizontal = 12.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(text, fontSize = 14.sp, fontWeight = FontWeight.Medium,
+            color = if (accent) Color.White else kb.label.copy(alpha = if (enabled) 1f else 0.4f))
     }
 }
 
 /** Suggestions for the pinyin being typed. Tap one to put it in the message. */
 @Composable
 private fun CandidateBar(composing: String, candidates: List<Candidate>, onPick: (Candidate) -> Unit) {
-    Row(Modifier.fillMaxWidth().height(44.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text(composing, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
+    val kb = LocalKb.current
+    Row(Modifier.fillMaxWidth().height(48.dp).background(kb.toolbar), verticalAlignment = Alignment.CenterVertically) {
+        Text(composing, fontSize = 13.sp, color = kb.label.copy(alpha = 0.6f),
             modifier = Modifier.padding(horizontal = 6.dp))
         LazyRow(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
             itemsIndexed(candidates) { i, c ->
@@ -155,11 +260,11 @@ private fun CandidateBar(composing: String, candidates: List<Candidate>, onPick:
                     Modifier
                         .height(40.dp)
                         .clip(RoundedCornerShape(6.dp))
-                        .background(if (i == 0) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceVariant)
+                        .background(if (i == 0) kb.key else kb.toolbar)
                         .clickable { onPick(c) }
                         .padding(horizontal = 10.dp),
                     contentAlignment = Alignment.Center,
-                ) { Text(c.word, fontSize = 20.sp, color = MaterialTheme.colorScheme.onSurface) }
+                ) { Text(c.word, fontSize = 20.sp, color = kb.label) }
             }
         }
     }
@@ -168,8 +273,8 @@ private fun CandidateBar(composing: String, candidates: List<Candidate>, onPick:
 /** Number row, letter (or symbol) rows and the bottom row. */
 @Composable
 private fun Keys(
-    symbols: Boolean,
-    onSymbols: () -> Unit,
+    page: Int,
+    onPage: (Int) -> Unit,
     shift: Shift,
     onShift: () -> Unit,
     chinese: Boolean,
@@ -177,58 +282,96 @@ private fun Keys(
     onText: (String) -> Unit,
     onBackspace: () -> Unit,
     onEnter: () -> Unit,
-    onSwitchKeyboard: () -> Unit,
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            NUMBER_ROW.forEach { c -> Key(c.toString(), height = 40.dp, preview = true) { onText(c.toString()) } }
-        }
-        val rows = if (symbols) SYMBOL_ROWS else LETTER_ROWS
-        rows.forEachIndexed { i, row ->
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                if (i == 2) {
-                    if (symbols) Spacer1(1.5f)
-                    else Key(
-                        when (shift) { Shift.Off -> "⇧"; Shift.On -> "⬆"; Shift.Lock -> "⇪" },
-                        1.5f, highlighted = shift != Shift.Off, onClick = onShift,
+    val kb = LocalKb.current
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        KeyRow { NUMBER_ROW.forEach { c -> Key(c.toString(), preview = true) { onText(c.toString()) } } }
+        if (page == 0) {
+            LETTER_ROWS.forEachIndexed { i, row ->
+                KeyRow {
+                    if (i == 1) Spacer1(0.5f)
+                    if (i == 2) Key(
+                        if (shift == Shift.Lock) "⇪" else "⇧", 1.5f, function = true,
+                        labelColor = if (shift != Shift.Off) kb.accent else null, onClick = onShift,
                     )
+                    row.forEach { c ->
+                        val label = if (shift != Shift.Off) c.uppercase() else c.toString()
+                        Key(label, preview = true) { onText(label) }
+                    }
+                    if (i == 1) Spacer1(0.5f)
+                    if (i == 2) Key("⌫", 1.5f, function = true, repeat = true, onClick = onBackspace)
                 }
-                if (i == 1 && !symbols) Spacer1(0.5f)
-                row.forEach { c ->
-                    val label = if (shift != Shift.Off && !symbols) c.uppercase() else c.toString()
-                    Key(label, preview = true) { onText(label) }
+            }
+        } else {
+            val rows = SYMBOL_PAGES[page - 1]
+            rows.forEachIndexed { i, row ->
+                KeyRow {
+                    if (i == 2) Key(if (page == 1) "1/2" else "2/2", 1.5f, function = true) { onPage(if (page == 1) 2 else 1) }
+                    row.forEach { c -> Key(c.toString(), preview = true) { onText(c.toString()) } }
+                    if (i == 2) Key("⌫", 1.5f, function = true, repeat = true, onClick = onBackspace)
                 }
-                if (i == 1 && !symbols) Spacer1(0.5f)
-                if (i == 2) Key("⌫", 1.5f, repeat = true, onClick = onBackspace)
             }
         }
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            Key(if (symbols) "ABC" else "?123", 1.4f, onClick = onSymbols)
-            Key("🌐", 1f, onClick = onSwitchKeyboard)
-            Key(if (chinese) "中" else "En", 1f, highlighted = chinese, onClick = onToggleChinese)
+        KeyRow {
+            Key(if (page == 0) "!#1" else "ABC", 1.5f, function = true) { onPage(if (page == 0) 1 else 0) }
+            LanguageKey(chinese, onToggleChinese)
             Key(if (chinese) "，" else ",", 1f) { onText(",") }
-            Key(if (chinese) "空格" else "space", 3.2f) { onText(" ") }
+            Key("␣", 4f) { onText(" ") }
             Key(if (chinese) "。" else ".", 1f) { onText(".") }
-            Key("⏎", 1.4f, onClick = onEnter)
+            Key("⏎", 1.5f, function = true, onClick = onEnter)
         }
     }
 }
 
+@Composable
+private fun KeyRow(content: @Composable RowScope.() -> Unit) {
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp), content = content)
+}
+
+/** "中/En" key: the active language is drawn brighter. */
+@Composable
+private fun RowScope.LanguageKey(chinese: Boolean, onClick: () -> Unit) {
+    val kb = LocalKb.current
+    val view = LocalView.current
+    Box(
+        Modifier
+            .weight(1f)
+            .height(KEY_HEIGHT)
+            .clip(RoundedCornerShape(10.dp))
+            .background(kb.functionKey)
+            .clickable {
+                view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                onClick()
+            },
+    ) {
+        val on = kb.label
+        val off = kb.label.copy(alpha = 0.4f)
+        Text("中", fontSize = 13.sp, color = if (chinese) on else off,
+            modifier = Modifier.align(Alignment.TopStart).padding(start = 9.dp, top = 6.dp))
+        Text("/", fontSize = 16.sp, color = off, modifier = Modifier.align(Alignment.Center))
+        Text("En", fontSize = 13.sp, color = if (chinese) off else on,
+            modifier = Modifier.align(Alignment.BottomEnd).padding(end = 7.dp, bottom = 6.dp))
+    }
+}
+
+private val KEY_HEIGHT = 50.dp
+
 /**
  * One key. [preview] shows a bigger copy of the letter above your finger while pressed;
- * [repeat] keeps firing while held (used for backspace). Every press gives a light tap
- * vibration, like other keyboards (no permission needed for this kind).
+ * [repeat] keeps firing while held (used for backspace); [function] keys (shift, enter...)
+ * are drawn darker. Every press gives a light tap vibration, like other keyboards.
  */
 @Composable
 private fun RowScope.Key(
     label: String,
     weight: Float = 1f,
-    height: Dp = 46.dp,
     preview: Boolean = false,
     repeat: Boolean = false,
-    highlighted: Boolean = false,
+    function: Boolean = false,
+    labelColor: Color? = null,
     onClick: () -> Unit,
 ) {
+    val kb = LocalKb.current
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     val view = LocalView.current
@@ -247,15 +390,12 @@ private fun RowScope.Key(
         }
     }
     // zIndex: draw a pressed key (and its preview) on top of its neighbours.
-    Box(Modifier.weight(weight).height(height).zIndex(if (pressed) 1f else 0f)) {
+    Box(Modifier.weight(weight).height(KEY_HEIGHT).zIndex(if (pressed) 1f else 0f)) {
         Box(
             Modifier
                 .matchParentSize()
-                .clip(RoundedCornerShape(6.dp))
-                .background(
-                    if (pressed || highlighted) MaterialTheme.colorScheme.secondaryContainer
-                    else MaterialTheme.colorScheme.surface
-                )
+                .clip(RoundedCornerShape(10.dp))
+                .background(if (pressed) kb.pressed else if (function) kb.functionKey else kb.key)
                 .clickable(interactionSource = interaction, indication = null) {
                     if (!repeat) {
                         view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
@@ -264,19 +404,21 @@ private fun RowScope.Key(
                 },
             contentAlignment = Alignment.Center,
         ) {
-            Text(label, fontSize = 18.sp, color = MaterialTheme.colorScheme.onSurface)
+            // Short labels (letters, symbols) big; words like "ABC" or "1/2" a bit smaller.
+            val size = if (label.length > 1) 18 else 24
+            Text(label, fontSize = size.sp, color = labelColor ?: kb.label)
         }
         if (preview && pressed) {
             Box(
                 Modifier
                     .align(Alignment.TopCenter)
-                    .offset(y = (-54).dp)
-                    .size(width = 48.dp, height = 52.dp)
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(MaterialTheme.colorScheme.primaryContainer),
+                    .offset(y = (-58).dp)
+                    .size(width = 52.dp, height = 56.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(kb.pressed),
                 contentAlignment = Alignment.Center,
             ) {
-                Text(label, fontSize = 28.sp, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                Text(label, fontSize = 30.sp, color = kb.label)
             }
         }
     }
@@ -291,8 +433,6 @@ private fun RowScope.Spacer1(weight: Float) {
 @Composable
 private fun AssistPanel(
     state: AssistState,
-    onTranslate: () -> Unit,
-    onInsertChinese: () -> Unit,
     detailsStates: Map<Sentence, Load<SentenceDetails>>,
     onExpand: (Sentence) -> Unit,
     whyStates: Map<Sentence, Load<String>>,
@@ -301,20 +441,7 @@ private fun AssistPanel(
     onSave: (Sentence) -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            FilledTonalButton(onClick = onTranslate, enabled = state !is AssistState.Loading) {
-                Text("Translate")
-            }
-            Spacer(Modifier.width(8.dp))
-            when (state) {
-                is AssistState.Loading -> CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
-                is AssistState.Error -> Text(state.message, color = MaterialTheme.colorScheme.error, fontSize = 14.sp)
-                is AssistState.Result -> Box(Modifier.weight(1f), contentAlignment = Alignment.CenterEnd) {
-                    Button(onClick = onInsertChinese) { Text("Insert Chinese") }
-                }
-                AssistState.Idle -> {}
-            }
-        }
+        if (state is AssistState.Error) Text(state.message, color = MaterialTheme.colorScheme.error, fontSize = 14.sp)
         if (state is AssistState.Result) {
             // Cap the height so the keys stay on screen; scroll if there are many sentences.
             Column(
@@ -352,7 +479,7 @@ private fun SentenceCard(
         Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(8.dp))
-            .background(MaterialTheme.colorScheme.surface)
+            .background(LocalKb.current.key)
             .clickable {
                 expanded = !expanded
                 if (expanded) onExpand()
@@ -429,30 +556,15 @@ private fun ModeToggle(mode: Mode, onMode: (Mode) -> Unit) {
 
 /** Practice: the Chinese stays hidden; type each syllable in pinyin to earn the character. */
 @Composable
-private fun PracticePanel(state: PracticeState, onStart: () -> Unit, onHint: () -> Unit) {
+private fun PracticePanel(state: PracticeState) {
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            FilledTonalButton(onClick = onStart, enabled = state !is PracticeState.Loading) {
-                Text(if (state is PracticeState.Active) "Restart" else "Translate")
-            }
-            Spacer(Modifier.width(8.dp))
-            when (state) {
-                PracticeState.Loading -> CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
-                is PracticeState.Error -> Text(state.message, color = MaterialTheme.colorScheme.error, fontSize = 14.sp)
-                PracticeState.Idle -> Text("Type English, then Translate.", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                is PracticeState.Active -> if (!state.done) {
-                    Box(Modifier.weight(1f), contentAlignment = Alignment.CenterEnd) {
-                        TextButton(onClick = onHint) { Text("Hint") }
-                    }
-                }
-            }
-        }
+        if (state is PracticeState.Error) Text(state.message, color = MaterialTheme.colorScheme.error, fontSize = 14.sp)
         if (state is PracticeState.Active) {
             Column(
                 Modifier
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(8.dp))
-                    .background(MaterialTheme.colorScheme.surface)
+                    .background(LocalKb.current.key)
                     .padding(horizontal = 12.dp, vertical = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(4.dp),
             ) {
