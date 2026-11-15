@@ -3,6 +3,11 @@ name: Build
 on:
   push:
   workflow_dispatch:
+    inputs:
+      release_version:
+        description: "Make a full release with this version (e.g. 1.0.0). Leave empty for a test build."
+        required: false
+        default: ""
 
 permissions:
   contents: write  # needed to create a GitHub Release
@@ -53,7 +58,7 @@ jobs:
           name: pinyin-keys
           path: pinyin-keys.apk
       - name: Publish prerelease
-        if: github.ref_type == 'branch'
+        if: github.ref_type == 'branch' && inputs.release_version == ''
         env:
           GH_TOKEN: ${{ github.token }}
           SIGNED: ${{ steps.ks.outputs.path != '' }}
@@ -65,3 +70,16 @@ jobs:
           gh release create "$TAG" pinyin-keys.apk --prerelease \
             --target "$GITHUB_SHA" --title "$KIND build ($GITHUB_REF_NAME)" \
             --notes "$KIND build of $GITHUB_SHA."
+
+      # Full release: only when started by hand with a version, and only if signed.
+      - name: Publish full release
+        if: inputs.release_version != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ inputs.release_version }}
+          SIGNED: ${{ steps.ks.outputs.path != '' }}
+        run: |
+          if [ "$SIGNED" != "true" ]; then echo "Refusing to release an unsigned build"; exit 1; fi
+          cp pinyin-keys.apk "pinyin-keys-$VERSION.apk"
+          gh release create "v$VERSION" "pinyin-keys-$VERSION.apk" --latest \
+            --target "$GITHUB_SHA" --title "Pinyin Keys $VERSION" --notes-file RELEASE_NOTES.md

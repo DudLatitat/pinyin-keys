@@ -37,6 +37,10 @@
   Clipboard history (owner's decision, CLAUDE.md updated): last 15 copies captured with
   OnPrimaryClipChangedListener; text in encrypted prefs, images copied to filesDir/clips and
   pasted via commitContent + FileProvider. Sensitive clips and password fields are skipped.
+- App icon: adaptive vector (white key with 中 on blue), with a monochrome layer.
+- Releases: run the Build workflow by hand with `release_version` (e.g. 1.0.0) to publish a
+  full, signed GitHub Release `v<version>` using RELEASE_NOTES.md. Bump versionCode/versionName
+  in app/build.gradle.kts first. v1.0.0 = versionCode 2.
   - Signing: keystore generated; CI signs the release when SIGNING_* Actions secrets are set.
 - No Android SDK in the cloud workspace: app code is compiled only by CI. Read build
   failures from the workflow's job annotations/logs.
