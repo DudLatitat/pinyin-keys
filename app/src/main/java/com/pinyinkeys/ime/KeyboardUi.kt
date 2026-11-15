@@ -122,11 +122,12 @@ fun KeyboardUi(
             }
             // BoxWithConstraints tells us how wide the keyboard window is.
             BoxWithConstraints(Modifier.fillMaxWidth()) {
-                if (maxWidth >= 600.dp && !sensitive) {
+                val width = maxWidth
+                if (width >= 600.dp && !sensitive) {
                     // Wide screen (foldable's inner screen): cards on the left, keys on the right.
                     Row(Modifier.fillMaxWidth().padding(4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) { panel() }
-                        Column(Modifier.width(minOf(maxWidth * 0.55f, 560.dp)), verticalArrangement = Arrangement.spacedBy(6.dp)) { keys() }
+                        Column(Modifier.width(minOf(width * 0.55f, 560.dp)), verticalArrangement = Arrangement.spacedBy(6.dp)) { keys() }
                     }
                 } else {
                     Column(
