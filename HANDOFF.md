@@ -13,7 +13,8 @@
   when a card is opened (cached like Why). Translate went from 6-9 s to about 2 s.
 - Milestone 4 code written (Practice.kt + PracticePanel): Assist/Practice toggle, syllable
   matching (tones optional, setting to require them; v or u for ü), auto punctuation, Hint,
-  Restart. Backspace in Practice only edits the pinyin buffer. Next: owner tests it.
+  Restart. Backspace in Practice only edits the pinyin buffer. Tested by the owner: works.
+- Next: Milestone 5 (saved sentences in Room).
   - Signing: keystore generated; CI signs the release when SIGNING_* Actions secrets are set.
 - No Android SDK in the cloud workspace: app code is compiled only by CI. Read build
   failures from the workflow's job annotations/logs.
