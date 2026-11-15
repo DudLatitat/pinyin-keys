@@ -3,6 +3,12 @@ A personal Android keyboard that shows Chinese and pinyin for the English you ty
 **Install:** download `pinyin-keys-<version>.apk` below, open it on the phone, then turn on
 Pinyin Keys in the system keyboard settings. Add your Claude API key in the Pinyin Keys app.
 
+## New in 1.0.1
+- Word suggestions while typing, next-word suggestions, and autocorrect (backspace undoes it).
+- The top bar changes with what you're doing: suggestions, a Paste button after copying, or tools.
+- Clipboard keeps your last 15 copies, including images.
+- Optional: offer to paste a screenshot you just took.
+
 ## Features
 - **Assist:** tap Translate to see each sentence in casual Mandarin with pinyin; tap a card
   for the word breakdown and "Why?"; Insert replaces your English with the Chinese.

@@ -45,9 +45,10 @@
   gives completions + typo corrections (keyboard-neighbour edits); autocorrect on space
   (setting, on by default; backspace undoes). NextWords learns word pairs on device.
 - App icon: adaptive vector (white key with 中 on blue), with a monochrome layer.
-- Releases: run the Build workflow by hand with `release_version` (e.g. 1.0.0) to publish a
-  full, signed GitHub Release `v<version>` using RELEASE_NOTES.md. Bump versionCode/versionName
-  in app/build.gradle.kts first. v1.0.0 = versionCode 2.
+- Releases (owner: no prereleases): every signed CI build publishes a full release
+  `v<versionName>` with RELEASE_NOTES.md, skipping if that version already exists. Bump
+  versionName in app/build.gradle.kts and update RELEASE_NOTES.md for each release.
+  versionCode = GitHub run number.
   - Signing: keystore generated; CI signs the release when SIGNING_* Actions secrets are set.
 - No Android SDK in the cloud workspace: app code is compiled only by CI. Read build
   failures from the workflow's job annotations/logs.

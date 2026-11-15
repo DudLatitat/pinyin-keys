@@ -57,29 +57,21 @@ jobs:
         with:
           name: pinyin-keys
           path: pinyin-keys.apk
-      - name: Publish prerelease
-        if: github.ref_type == 'branch' && inputs.release_version == ''
+      # Every signed build on the branch or main is published as a full release named after
+      # versionName (bump it in app/build.gradle.kts). An existing version is never overwritten.
+      - name: Publish release
+        if: steps.ks.outputs.path != '' && (github.ref_type == 'branch' || inputs.release_version != '')
         env:
           GH_TOKEN: ${{ github.token }}
-          SIGNED: ${{ steps.ks.outputs.path != '' }}
+          INPUT_VERSION: ${{ inputs.release_version }}
         run: |
-          TAG="build-${GITHUB_REF_NAME//\//-}"
-          KIND=$([ "$SIGNED" = "true" ] && echo "Signed release" || echo "Debug")
-          gh release delete "$TAG" --yes --cleanup-tag || true
-          gh release delete "debug-${GITHUB_REF_NAME//\//-}" --yes --cleanup-tag || true
-          gh release create "$TAG" pinyin-keys.apk --prerelease \
-            --target "$GITHUB_SHA" --title "$KIND build ($GITHUB_REF_NAME)" \
-            --notes "$KIND build of $GITHUB_SHA."
-
-      # Full release: only when started by hand with a version, and only if signed.
-      - name: Publish full release
-        if: inputs.release_version != ''
-        env:
-          GH_TOKEN: ${{ github.token }}
-          VERSION: ${{ inputs.release_version }}
-          SIGNED: ${{ steps.ks.outputs.path != '' }}
-        run: |
-          if [ "$SIGNED" != "true" ]; then echo "Refusing to release an unsigned build"; exit 1; fi
+          VERSION="${INPUT_VERSION:-$(grep -oP 'versionName = "\K[^"]+' app/build.gradle.kts)}"
+          # Remove the old rolling test prerelease if it's still there.
+          gh release delete "build-${GITHUB_REF_NAME//\//-}" --yes --cleanup-tag 2>/dev/null || true
+          if gh release view "v$VERSION" >/dev/null 2>&1; then
+            echo "v$VERSION already released; bump versionName to publish a new release."
+            exit 0
+          fi
           cp pinyin-keys.apk "pinyin-keys-$VERSION.apk"
           gh release create "v$VERSION" "pinyin-keys-$VERSION.apk" --latest \
             --target "$GITHUB_SHA" --title "Pinyin Keys $VERSION" --notes-file RELEASE_NOTES.md
