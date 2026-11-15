@@ -203,7 +203,7 @@ private fun Toolbar(
 ) {
     val kb = LocalKb.current
     Row(
-        Modifier.fillMaxWidth().height(48.dp).background(kb.toolbar).padding(horizontal = 8.dp),
+        Modifier.fillMaxWidth().height(44.dp).background(kb.toolbar).padding(horizontal = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
@@ -234,8 +234,8 @@ private fun Pill(text: String, selected: Boolean = false, accent: Boolean = fals
     val kb = LocalKb.current
     Box(
         Modifier
-            .height(34.dp)
-            .clip(RoundedCornerShape(17.dp))
+            .height(32.dp)
+            .clip(RoundedCornerShape(16.dp))
             .background(if (accent) kb.accent else if (selected) kb.key else kb.functionKey)
             .clickable(enabled = enabled, onClick = onClick)
             .padding(horizontal = 12.dp),
@@ -284,7 +284,7 @@ private fun Keys(
     onSwitchKeyboard: () -> Unit,
 ) {
     val kb = LocalKb.current
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
         KeyRow { NUMBER_ROW.forEach { c -> Key(c.toString(), preview = true) { onText(c.toString()) } } }
         if (page == 0) {
             LETTER_ROWS.forEachIndexed { i, row ->
@@ -347,15 +347,18 @@ private fun RowScope.LanguageKey(chinese: Boolean, onClick: () -> Unit) {
     ) {
         val on = kb.label
         val off = kb.label.copy(alpha = 0.4f)
-        Text("中", fontSize = 13.sp, color = if (chinese) on else off,
-            modifier = Modifier.align(Alignment.TopStart).padding(start = 9.dp, top = 6.dp))
-        Text("/", fontSize = 16.sp, color = off, modifier = Modifier.align(Alignment.Center))
-        Text("En", fontSize = 13.sp, color = if (chinese) off else on,
-            modifier = Modifier.align(Alignment.BottomEnd).padding(end = 7.dp, bottom = 6.dp))
+        // "中" top-left, "/" in the middle, "En" bottom-right, each small enough not to overlap.
+        Row(Modifier.align(Alignment.Center), verticalAlignment = Alignment.CenterVertically) {
+            Text("中", fontSize = 11.sp, color = if (chinese) on else off,
+                modifier = Modifier.offset(y = (-5).dp))
+            Text("/", fontSize = 14.sp, color = off)
+            Text("En", fontSize = 12.sp, color = if (chinese) off else on,
+                modifier = Modifier.offset(y = 5.dp))
+        }
     }
 }
 
-private val KEY_HEIGHT = 50.dp
+private val KEY_HEIGHT = 42.dp
 
 /**
  * One key. [preview] shows a bigger copy of the letter above your finger while pressed;
@@ -406,20 +409,20 @@ private fun RowScope.Key(
             contentAlignment = Alignment.Center,
         ) {
             // Short labels (letters, symbols) big; words like "ABC" or "1/2" a bit smaller.
-            val size = if (label.length > 1) 18 else 24
+            val size = if (label.length > 1) 17 else 22
             Text(label, fontSize = size.sp, color = labelColor ?: kb.label)
         }
         if (preview && pressed) {
             Box(
                 Modifier
                     .align(Alignment.TopCenter)
-                    .offset(y = (-58).dp)
-                    .size(width = 52.dp, height = 56.dp)
+                    .offset(y = (-50).dp)
+                    .size(width = 46.dp, height = 48.dp)
                     .clip(RoundedCornerShape(10.dp))
                     .background(kb.pressed),
                 contentAlignment = Alignment.Center,
             ) {
-                Text(label, fontSize = 30.sp, color = kb.label)
+                Text(label, fontSize = 26.sp, color = kb.label)
             }
         }
     }
