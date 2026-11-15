@@ -224,20 +224,17 @@ fun KeyboardUi(
             }
             // BoxWithConstraints tells us how wide the keyboard window is.
             BoxWithConstraints(Modifier.fillMaxWidth()) {
-                val width = maxWidth
-                if (width >= 600.dp && !sensitive) {
-                    // Wide screen (foldable's inner screen): cards on the left, keys on the right.
-                    Column {
+                // Wide screen (foldable's inner screen): like a standard keyboard, keep the
+                // keys centred at about 88% of the width and make them a little taller.
+                val wide = maxWidth >= 600.dp
+                val contentWidth = if (wide) maxWidth * 0.88f else minOf(maxWidth, 720.dp)
+                CompositionLocalProvider(LocalKeyHeights provides if (wide) WideKeys else NormalKeys) {
+                    Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
                         toolbar()
-                        Row(Modifier.fillMaxWidth().padding(6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) { panel() }
-                            Column(Modifier.width(minOf(width * 0.55f, 560.dp))) { keys() }
-                        }
-                    }
-                } else {
-                    Column(Modifier.align(Alignment.Center).widthIn(max = 720.dp).fillMaxWidth()) {
-                        toolbar()
-                        Column(Modifier.padding(horizontal = 6.dp, vertical = 6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Column(
+                            Modifier.width(contentWidth).padding(horizontal = 6.dp, vertical = 6.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp),
+                        ) {
                             panel()
                             keys()
                         }
@@ -380,7 +377,7 @@ private fun Keys(
 ) {
     val kb = LocalKb.current
     Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
-        KeyRow { NUMBER_ROW.forEach { c -> Key(c.toString(), preview = true, height = NUMBER_KEY_HEIGHT, fontSize = 19) { onText(c.toString()) } } }
+        KeyRow { NUMBER_ROW.forEach { c -> Key(c.toString(), preview = true, height = LocalKeyHeights.current.number, fontSize = 19) { onText(c.toString()) } } }
         if (page == 0) {
             LETTER_ROWS.forEachIndexed { i, row ->
                 KeyRow {
@@ -431,7 +428,7 @@ private fun RowScope.LanguageKey(chinese: Boolean, onClick: () -> Unit) {
     Box(
         Modifier
             .weight(1f)
-            .height(KEY_HEIGHT)
+            .height(LocalKeyHeights.current.key)
             .clip(KEY_SHAPE)
             .background(kb.functionKey)
             .clickable {
@@ -452,8 +449,11 @@ private fun RowScope.LanguageKey(chinese: Boolean, onClick: () -> Unit) {
     }
 }
 
-private val KEY_HEIGHT = 42.dp
-private val NUMBER_KEY_HEIGHT = 36.dp
+/** Key heights; a bit taller on the wide inner screen of a foldable. */
+data class KeyHeights(val key: Dp, val number: Dp)
+internal val NormalKeys = KeyHeights(key = 42.dp, number = 36.dp)
+private val WideKeys = KeyHeights(key = 48.dp, number = 40.dp)
+internal val LocalKeyHeights = staticCompositionLocalOf { NormalKeys }
 /** Slightly rounded, mostly square corners, like a standard keyboard. */
 private val KEY_SHAPE = RoundedCornerShape(6.dp)
 
@@ -470,7 +470,7 @@ private fun RowScope.Key(
     repeat: Boolean = false,
     function: Boolean = false,
     labelColor: Color? = null,
-    height: Dp = KEY_HEIGHT,
+    height: Dp = LocalKeyHeights.current.key,
     fontSize: Int? = null,
     onClick: () -> Unit,
 ) {

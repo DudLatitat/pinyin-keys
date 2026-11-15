@@ -42,7 +42,8 @@ enum class Panel { Keys, Emoji, Clipboard, Edit }
 enum class EditAction { Left, Right, Up, Down, Home, End, SelectAll, Cut, Copy, Paste }
 
 /** Same height as the key area, so switching panels doesn't make the keyboard jump. */
-val PANEL_HEIGHT = 232.dp
+val PANEL_HEIGHT: androidx.compose.ui.unit.Dp
+    @Composable get() = LocalKeyHeights.current.let { it.number + it.key * 4 + 28.dp }
 
 /** A plain button used inside the panels. */
 @Composable

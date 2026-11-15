@@ -3,6 +3,10 @@ A personal Android keyboard that shows Chinese and pinyin for the English you ty
 **Install:** download `pinyin-keys-<version>.apk` below, open it on the phone, then turn on
 Pinyin Keys in the system keyboard settings. Add your Claude API key in the Pinyin Keys app.
 
+## New in 1.0.4
+- Foldable inner screen: the keyboard now spans the screen (centred, ~88% wide) with
+  slightly taller keys, instead of a half-width keyboard beside an empty area.
+
 ## New in 1.0.3
 - Smarter next-word suggestions that use the last two words of your sentence
   ("how are" → you, "I'm going" → to), from a built-in table of common phrases.

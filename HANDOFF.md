@@ -18,7 +18,7 @@
   Room (saved/SavedSentences.kt); "Saved sentences" screen in the app with Delete. Tested: works.
 - Keyboard polish (written, untested): number row on top, key preview popup, held backspace
   repeats, tap haptics, auto-capitalize via getCursorCapsMode, double-space period, shift
-  cycles off/one/lock, wide-screen layout (panel left, keys right at >= 600dp).
+  cycles off/one/lock. Wide screens (>= 600dp): keys centred at 88% width, taller (KeyHeights).
 - Chinese typing mode ("En/中" key): pinyin composing text + candidate bar from
   PinyinDictionary (exact, prefix completions, then leading-part matches). Space takes the
   top candidate, enter keeps raw letters, Chinese punctuation in this mode.
