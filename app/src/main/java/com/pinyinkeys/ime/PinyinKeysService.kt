@@ -339,6 +339,7 @@ class PinyinKeysService : InputMethodService(),
             lastAutocorrect = null
             val before = ic.getTextBeforeCursor(corrected.length + 1, 0)?.toString()
             if (before == "$corrected ") {
+                markOwnEdit()
                 ic.deleteSurroundingText(corrected.length + 1, 0)
                 ic.commitText(original, 1)
                 keepWord(original)  // you undid it, so don't correct this word again
@@ -436,6 +437,7 @@ class PinyinKeysService : InputMethodService(),
         if (autocorrectOnly && Settings(this).autocorrect) {
             val fix = english?.autocorrect(word)
             if (fix != null && fix != word) {
+                markOwnEdit()
                 ic.deleteSurroundingText(word.length, 0)
                 ic.commitText(fix, 1)
                 lastAutocorrect = word to fix
@@ -447,8 +449,13 @@ class PinyinKeysService : InputMethodService(),
     }
 
     /** A suggestion tapped: replace the word being typed (or add the next word) + space. */
+    /** When this keyboard last changed the text in a way that moves the cursor a lot. */
+    private var lastOwnEditAt = 0L
+    private fun markOwnEdit() { lastOwnEditAt = android.os.SystemClock.uptimeMillis() }
+
     private fun pickSuggestion(picked: String) {
         val ic = currentInputConnection ?: return
+        markOwnEdit()
         val word = if (picked.startsWith(LITERAL)) picked.removePrefix(LITERAL).also(::keepWord) else picked
         if (currentWord.isNotEmpty()) ic.deleteSurroundingText(currentWord.length, 0)
         ic.commitText("$word ", 1)
@@ -467,6 +474,9 @@ class PinyinKeysService : InputMethodService(),
         candidatesStart: Int, candidatesEnd: Int,
     ) {
         super.onUpdateSelection(oldSelStart, oldSelEnd, newSelStart, newSelEnd, candidatesStart, candidatesEnd)
+        // Our own edits (a picked suggestion, an autocorrect, a paste) move the cursor too;
+        // the app reports that a moment later, so ignore moves right after we edited.
+        if (android.os.SystemClock.uptimeMillis() - lastOwnEditAt < 400) return
         val jump = kotlin.math.abs(newSelStart - oldSelStart)
         if (newSelStart != newSelEnd || jump > currentWord.length + 2 && jump > 2) {
             if (composing.value.isEmpty()) {
