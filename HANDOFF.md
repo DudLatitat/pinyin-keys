@@ -4,9 +4,7 @@
 - Done: repo, rules, Milestone 1 code (Compose QWERTY IME, switch-back key, setup
   screen) and a CI workflow that builds a debug APK and publishes it as a prerelease.
 - Next: owner tests Milestone 1 in WeChat; then signed release builds and Milestone 2.
-  - The signing keystore does not exist yet. Ask the owner to create one and add it as
-    Actions secrets (base64 keystore + passwords + alias); never generate or commit it here.
-    Until then, build a debug APK so Milestone 1 can be tested.
+  - Signing: keystore generated; CI signs the release when SIGNING_* Actions secrets are set.
 - No Android SDK in the cloud workspace: app code is compiled only by CI. Read build
   failures from the workflow's job annotations/logs.
 - Work in this repo only. Do not read or reference any other repository.
