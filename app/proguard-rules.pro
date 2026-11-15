@@ -15,3 +15,7 @@
 # Tink (used by EncryptedSharedPreferences) references compile-time-only annotations.
 -dontwarn com.google.errorprone.annotations.**
 -dontwarn javax.annotation.**
+
+# Keep class names readable (the code is open source anyway), so error messages
+# and logs name the real error type. Shrinking still removes unused code.
+-dontobfuscate

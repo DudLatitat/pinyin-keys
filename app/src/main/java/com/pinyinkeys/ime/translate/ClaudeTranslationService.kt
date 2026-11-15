@@ -82,12 +82,21 @@ class ClaudeTranslationService(
             })
         }
 
+        val raw = post(body.toString())
         val response = try {
-            json.parseToJsonElement(post(body.toString())).jsonObject
-        } catch (e: TranslationException) {
-            throw e
+            json.parseToJsonElement(raw).jsonObject
         } catch (e: Exception) {
-            throw TranslationException("Couldn't translate (E2: unreadable reply). Try again.", e)
+            // Describe the reply's shape only (type, size, first character class), never its text.
+            val start = when (raw.trimStart().firstOrNull()) { '{' -> "json"; '<' -> "html"; null -> "empty"; else -> "other" }
+            val kind = when (e) {
+                is kotlinx.serialization.SerializationException -> "parse"
+                is IllegalArgumentException -> "notObject"
+                else -> e.javaClass.simpleName.take(24)
+            }
+            Log.w(TAG, "Unreadable reply: $kind type=$lastContentType len=${raw.length} start=$start")
+            throw TranslationException(
+                "Couldn't translate (E2: $kind, $start, ${raw.length} chars, ${lastContentType ?: "no type"}). Try again.", e
+            )
         }
 
         when (response["stop_reason"]?.jsonPrimitive?.content) {
@@ -102,6 +111,9 @@ class ClaudeTranslationService(
                 "Couldn't translate (E3: no text, stop=${response["stop_reason"]?.jsonPrimitive?.content}). Try again."
             )
     }
+
+    /** Content type of the last reply, for error messages only. */
+    private var lastContentType: String? = null
 
     private fun post(body: String): String {
         val url = URL(baseUrl.trimEnd('/') + "/v1/messages")
@@ -131,6 +143,7 @@ class ClaudeTranslationService(
                     }
                 )
             }
+            lastContentType = conn.contentType?.substringBefore(';')
             return conn.inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
         } catch (e: IOException) {
             Log.w(TAG, "Network error: ${e.javaClass.simpleName}")
