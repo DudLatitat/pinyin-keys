@@ -1,5 +1,17 @@
 # Handoff: WeChat Pinyin Keyboard (Android)
 
+## Status (start here)
+- Done: repo created (public), CLAUDE.md rules, this handoff, .gitignore. No app code yet.
+- Next: Milestone 1 (bare keyboard) plus a GitHub Actions workflow that builds a signed
+  release APK and attaches it to a GitHub Release.
+  - The signing keystore does not exist yet. Ask the owner to create one and add it as
+    Actions secrets (base64 keystore + passwords + alias); never generate or commit it here.
+    Until then, build a debug APK so Milestone 1 can be tested.
+- No Android SDK in the cloud workspace: app code is compiled only by CI. Read build
+  failures from the workflow's job annotations/logs.
+- Translate trigger: still unanswered. Ask first; default to a button.
+- Work in this repo only. Do not read or reference any other repository.
+
 ## What this is
 A personal Android keyboard app (single user, not for distribution). While typing English in a chat app such as WeChat, it shows the Chinese translation and pinyin for each sentence. It can also coach the user to type the Chinese themselves in pinyin. Tapping a sentence shows a short breakdown of its structure.
 
