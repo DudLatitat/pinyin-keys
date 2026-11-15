@@ -54,6 +54,7 @@ import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -96,7 +97,7 @@ private val LightKb = KbColors(
     functionKey = Color(0xFFC6CAD1), pressed = Color(0xFFB0B4BB), label = Color(0xFF111111),
     accent = Color(0xFF2F6BFF),
 )
-private val LocalKb = staticCompositionLocalOf { DarkKb }
+internal val LocalKb = staticCompositionLocalOf { DarkKb }
 
 /** Shift key: off, one capital letter, or caps lock (tap cycles through them). */
 enum class Shift { Off, On, Lock }
@@ -136,7 +137,19 @@ fun KeyboardUi(
     composing: String,
     candidates: List<Candidate>,
     onCandidate: (Candidate) -> Unit,
+    recentEmoji: List<String>,
+    onEmoji: (String) -> Unit,
+    readClipboard: () -> String?,
+    pinnedClips: List<String>,
+    onPaste: (String) -> Unit,
+    onPin: (String) -> Unit,
+    onUnpin: (String) -> Unit,
+    onEdit: (EditAction) -> Unit,
+    onOpenSettings: () -> Unit,
 ) {
+    // Which panel shows instead of the letter keys (emoji, clipboard, editing).
+    var panelShown by remember { mutableStateOf(Panel.Keys) }
+    val togglePanel: (Panel) -> Unit = { p -> panelShown = if (panelShown == p) Panel.Keys else p }
     // 0 = letters, 1 and 2 = symbol pages.
     var page by remember { mutableStateOf(0) }
     val dark = isSystemInDarkTheme()
@@ -150,7 +163,7 @@ fun KeyboardUi(
             val toolbar: @Composable () -> Unit = {
                 if (composing.isNotEmpty()) CandidateBar(composing, candidates, onCandidate)
                 else Toolbar(sensitive, mode, onMode, assist, onTranslate, onInsertChinese,
-                    practice, onStartPractice, onHint, onSwitchKeyboard)
+                    practice, onStartPractice, onHint, panelShown, togglePanel, onOpenSettings)
             }
             val panel: @Composable () -> Unit = {
                 if (!sensitive) when (mode) {
@@ -159,7 +172,15 @@ fun KeyboardUi(
                 }
             }
             val keys: @Composable () -> Unit = {
-                Keys(page, { page = it }, shift, onShift, chinese, onToggleChinese, onText, onBackspace, onEnter, onSwitchKeyboard)
+                val close = { panelShown = Panel.Keys }
+                when (panelShown) {
+                    Panel.Keys -> Keys(page, { page = it }, shift, onShift, chinese, onToggleChinese, onText, onBackspace, onEnter, onSwitchKeyboard)
+                    Panel.Emoji -> EmojiPanel(recentEmoji, onEmoji, onBackspace, close)
+                    // No clipboard or editing panel in password fields.
+                    Panel.Clipboard -> if (sensitive) Keys(page, { page = it }, shift, onShift, chinese, onToggleChinese, onText, onBackspace, onEnter, onSwitchKeyboard)
+                        else ClipboardPanel(readClipboard, pinnedClips, onPaste, onPin, onUnpin, close)
+                    Panel.Edit -> EditPanel(onEdit, onBackspace, close)
+                }
             }
             // BoxWithConstraints tells us how wide the keyboard window is.
             BoxWithConstraints(Modifier.fillMaxWidth()) {
@@ -203,7 +224,9 @@ private fun Toolbar(
     practice: PracticeState,
     onStartPractice: () -> Unit,
     onHint: () -> Unit,
-    onSwitchKeyboard: () -> Unit,
+    panel: Panel,
+    onPanel: (Panel) -> Unit,
+    onOpenSettings: () -> Unit,
 ) {
     val kb = LocalKb.current
     Row(
@@ -211,9 +234,15 @@ private fun Toolbar(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(6.dp),
     ) {
+      // Left part scrolls sideways if the screen is too narrow for everything.
+      Row(
+          Modifier.weight(1f).horizontalScroll(rememberScrollState()),
+          verticalAlignment = Alignment.CenterVertically,
+          horizontalArrangement = Arrangement.spacedBy(6.dp),
+      ) {
         if (!sensitive) {
             // Tap to switch between Assist and Practice.
-            Pill(if (mode == Mode.Assist) "Assist ⇄" else "Practice ⇄", selected = true) {
+            Pill(if (mode == Mode.Assist) "Assist" else "Practice", selected = true) {
                 onMode(if (mode == Mode.Assist) Mode.Practice else Mode.Assist)
             }
             val loading = assist is AssistState.Loading || practice is PracticeState.Loading ||
@@ -224,13 +253,30 @@ private fun Toolbar(
                     enabled = !loading, onClick = onStartPractice)
             }
             if (loading) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = kb.accent)
-            Spacer(Modifier.weight(1f))
             if (mode == Mode.Assist && assist is AssistState.Result && assist.complete) Pill("Insert", accent = true, onClick = onInsertChinese)
             if (mode == Mode.Practice && practice is PracticeState.Active && !practice.done) Pill("Hint", onClick = onHint)
-        } else {
-            Spacer(Modifier.weight(1f))
         }
+      }
+        // Icon buttons, like a standard keyboard's tool row.
+        IconPill("😊", panel == Panel.Emoji) { onPanel(Panel.Emoji) }
+        if (!sensitive) IconPill("📋", panel == Panel.Clipboard) { onPanel(Panel.Clipboard) }
+        IconPill("✎", panel == Panel.Edit) { onPanel(Panel.Edit) }
+        IconPill("⚙", false, onClick = onOpenSettings)
     }
+}
+
+/** A round icon button in the toolbar; [active] when its panel is open. */
+@Composable
+private fun IconPill(icon: String, active: Boolean, onClick: () -> Unit) {
+    val kb = LocalKb.current
+    Box(
+        Modifier
+            .size(34.dp)
+            .clip(RoundedCornerShape(17.dp))
+            .background(if (active) kb.key else kb.functionKey)
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) { Text(icon, fontSize = 16.sp, color = kb.label) }
 }
 
 /** A small rounded toolbar button. */

@@ -1,6 +1,9 @@
 package com.pinyinkeys.ime
 
 import android.content.Context
+import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.serialization.builtins.serializer
+import kotlinx.serialization.json.Json
 import android.content.SharedPreferences
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKeys
@@ -46,6 +49,30 @@ class Settings(context: Context) {
     var strictTones: Boolean
         get() = prefs.getBoolean("strict_tones", false)
         set(v) = prefs.edit().putBoolean("strict_tones", v).apply()
+
+    /** Recently used emoji, newest first. */
+    var recentEmoji: List<String>
+        get() = readList("recent_emoji")
+        set(v) = writeList("recent_emoji", v)
+
+    /** Clipboard snippets the user pinned. Stored encrypted, only on this phone. */
+    var pinnedClips: List<String>
+        get() = readList("pinned_clips")
+        set(v) = writeList("pinned_clips", v)
+
+    private fun readList(key: String): List<String> = runCatching {
+        Json.decodeFromString(
+            ListSerializer(String.serializer()),
+            prefs.getString(key, null) ?: return emptyList(),
+        )
+    }.getOrDefault(emptyList())
+
+    private fun writeList(key: String, v: List<String>) = prefs.edit().putString(
+        key,
+        Json.encodeToString(
+            ListSerializer(String.serializer()), v,
+        ),
+    ).apply()
 
     /** Null when no API key is set yet. */
     fun translationService(): TranslationService? =

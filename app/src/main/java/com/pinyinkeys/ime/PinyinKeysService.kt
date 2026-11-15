@@ -1,5 +1,6 @@
 package com.pinyinkeys.ime
 
+import android.content.Intent
 import android.inputmethodservice.InputMethodService
 import android.text.InputType
 import android.view.KeyEvent
@@ -71,6 +72,9 @@ class PinyinKeysService : InputMethodService(),
     private val composing = mutableStateOf("")
     private val candidates = mutableStateOf<List<Candidate>>(emptyList())
     private var dictionary: PinyinDictionary? = null
+
+    private val recentEmoji = mutableStateOf<List<String>>(emptyList())
+    private val pinnedClips = mutableStateOf<List<String>>(emptyList())
     private val practiceState = mutableStateOf<PracticeState>(PracticeState.Idle)
     private var strictTones = false
 
@@ -82,6 +86,12 @@ class PinyinKeysService : InputMethodService(),
 
     override fun onCreate() {
         super.onCreate()
+        // Load saved emoji/clipboard lists in the background (encrypted prefs are slow to open).
+        lifecycleScope.launch {
+            val s = withContext(Dispatchers.IO) { Settings(this@PinyinKeysService) }
+            recentEmoji.value = s.recentEmoji
+            pinnedClips.value = s.pinnedClips
+        }
         savedStateController.performRestore(null)
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_CREATE)
     }
@@ -125,6 +135,15 @@ class PinyinKeysService : InputMethodService(),
                     composing = composing.value,
                     candidates = candidates.value,
                     onCandidate = ::pickCandidate,
+                    recentEmoji = recentEmoji.value,
+                    onEmoji = ::typeEmoji,
+                    readClipboard = ::readClipboard,
+                    pinnedClips = pinnedClips.value,
+                    onPaste = ::pasteText,
+                    onPin = { t -> updatePinned(listOf(t) + pinnedClips.value) },
+                    onUnpin = { t -> updatePinned(pinnedClips.value - t) },
+                    onEdit = ::edit,
+                    onOpenSettings = ::openSettings,
                 )
             }
         }
@@ -249,6 +268,70 @@ class PinyinKeysService : InputMethodService(),
     /** After a held backspace is released, update auto-capitals once. */
     private val capsAfterRepeat = Runnable {
         if (pendingCapsCheck) { pendingCapsCheck = false; updateAutoCaps() }
+    }
+
+    // --- Emoji, clipboard, editing ---
+
+    private fun typeEmoji(e: String) {
+        typeText(e)
+        val updated = (listOf(e) + (recentEmoji.value - e)).take(32)
+        recentEmoji.value = updated
+        lifecycleScope.launch(Dispatchers.IO) { Settings(this@PinyinKeysService).recentEmoji = updated }
+    }
+
+    /**
+     * Reads the current clipboard text. Only called when the user opens the clipboard
+     * panel (an explicit action), never in the background. Android lets the keyboard
+     * that's currently in use read the clipboard.
+     */
+    private fun readClipboard(): String? {
+        if (sensitiveField.value) return null
+        val cm = getSystemService(android.content.ClipboardManager::class.java) ?: return null
+        val clip = cm.primaryClip ?: return null
+        if (clip.itemCount == 0) return null
+        return clip.getItemAt(0).coerceToText(this)?.toString()?.takeIf { it.isNotBlank() }
+    }
+
+    private fun pasteText(text: String) {
+        if (composing.value.isNotEmpty()) commitFirstCandidate()
+        clearAssist()
+        currentInputConnection?.commitText(text, 1)
+        updateAutoCaps()
+    }
+
+    private fun updatePinned(list: List<String>) {
+        val updated = list.distinct().take(50)
+        pinnedClips.value = updated
+        lifecycleScope.launch(Dispatchers.IO) { Settings(this@PinyinKeysService).pinnedClips = updated }
+    }
+
+    private fun edit(action: EditAction) {
+        val ic = currentInputConnection ?: return
+        if (composing.value.isNotEmpty()) {
+            ic.finishComposingText()
+            setComposing("")
+        }
+        fun key(code: Int) {
+            ic.sendKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, code))
+            ic.sendKeyEvent(KeyEvent(KeyEvent.ACTION_UP, code))
+        }
+        when (action) {
+            EditAction.Left -> key(KeyEvent.KEYCODE_DPAD_LEFT)
+            EditAction.Right -> key(KeyEvent.KEYCODE_DPAD_RIGHT)
+            EditAction.Up -> key(KeyEvent.KEYCODE_DPAD_UP)
+            EditAction.Down -> key(KeyEvent.KEYCODE_DPAD_DOWN)
+            EditAction.Home -> key(KeyEvent.KEYCODE_MOVE_HOME)
+            EditAction.End -> key(KeyEvent.KEYCODE_MOVE_END)
+            // Context-menu actions are the same ones the app's own long-press menu uses.
+            EditAction.SelectAll -> ic.performContextMenuAction(android.R.id.selectAll)
+            EditAction.Cut -> ic.performContextMenuAction(android.R.id.cut)
+            EditAction.Copy -> ic.performContextMenuAction(android.R.id.copy)
+            EditAction.Paste -> ic.performContextMenuAction(android.R.id.paste)
+        }
+    }
+
+    private fun openSettings() {
+        startActivity(Intent(this, SetupActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
     }
 
     // --- Shift and Chinese mode ---

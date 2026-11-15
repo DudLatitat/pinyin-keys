@@ -27,6 +27,10 @@
 - Speed: keys fire on touch-down (pointerInput), profileinstaller added, auto-caps only asks
   the app after non-letters, HTTP connection reused (no disconnect), and Translate streams
   (SSE) so cards appear one by one (JsonItemScanner). Insert waits for the full result.
+- Toolbar icons open panels in place of the keys (Panels.kt): emoji (Emoji.kt, recents),
+  clipboard (reads the clip only when the panel is opened; pinned snippets stored encrypted;
+  no background clipboard history, per CLAUDE.md), text editing (arrows, select/cut/copy/paste),
+  settings shortcut. Clipboard panel is hidden in password fields.
   - Signing: keystore generated; CI signs the release when SIGNING_* Actions secrets are set.
 - No Android SDK in the cloud workspace: app code is compiled only by CI. Read build
   failures from the workflow's job annotations/logs.
