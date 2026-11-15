@@ -284,17 +284,19 @@ private fun Toolbar(
           horizontalArrangement = Arrangement.spacedBy(6.dp),
       ) {
         // Something was just copied: offer it (the text is read only when tapped).
-        if (showPasteChip) Pill("📋 Paste", accent = true, onClick = onPasteChip)
+        if (showPasteChip) IconPill("📋", true, onClick = onPasteChip)
         if (!sensitive) {
             // Tap to switch between Assist and Practice.
-            Pill(if (mode == Mode.Assist) "Assist" else "Practice", selected = true) {
+            // 助 = Assist (help), 练 = Practice. Tap to switch.
+            IconPill(if (mode == Mode.Assist) "助" else "练", true) {
                 onMode(if (mode == Mode.Assist) Mode.Practice else Mode.Assist)
             }
             val loading = assist is AssistState.Loading || practice is PracticeState.Loading ||
                 (assist is AssistState.Result && !assist.complete)
             when (mode) {
-                Mode.Assist -> Pill("Translate", enabled = !loading, onClick = onTranslate)
-                Mode.Practice -> Pill(if (practice is PracticeState.Active) "Restart" else "Translate",
+                // 译 = translate.
+                Mode.Assist -> IconPill("译", false, enabled = !loading, onClick = onTranslate)
+                Mode.Practice -> IconPill(if (practice is PracticeState.Active) "↻" else "译", false,
                     enabled = !loading, onClick = onStartPractice)
             }
             if (loading) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = kb.accent)
@@ -312,16 +314,16 @@ private fun Toolbar(
 
 /** A round icon button in the toolbar; [active] when its panel is open. */
 @Composable
-private fun IconPill(icon: String, active: Boolean, onClick: () -> Unit) {
+private fun IconPill(icon: String, active: Boolean, enabled: Boolean = true, onClick: () -> Unit) {
     val kb = LocalKb.current
     Box(
         Modifier
             .size(34.dp)
             .clip(RoundedCornerShape(17.dp))
             .background(if (active) kb.key else kb.functionKey)
-            .clickable(onClick = onClick),
+            .clickable(enabled = enabled, onClick = onClick),
         contentAlignment = Alignment.Center,
-    ) { Text(icon, fontSize = 16.sp, color = kb.label) }
+    ) { Text(icon, fontSize = 16.sp, color = kb.label.copy(alpha = if (enabled) 1f else 0.4f)) }
 }
 
 /** A small rounded toolbar button. */
@@ -607,6 +609,11 @@ private fun SentenceCard(
                 Text(sentence.hanzi, fontSize = 24.sp, color = MaterialTheme.colorScheme.onSurface)
                 Text(sentence.pinyin, fontSize = 15.sp, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Medium)
             }
+            // ⧉ copies the pinyin (the keyboard stays open).
+            val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
+            TextButton(onClick = {
+                clipboard.setText(androidx.compose.ui.text.AnnotatedString(sentence.pinyin))
+            }) { Text("⧉", fontSize = 20.sp) }
             // Bookmark: ☆ not saved, ★ saved. Its own tap target, so it doesn't open the card.
             when (saved) {
                 Load.Loading -> CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)

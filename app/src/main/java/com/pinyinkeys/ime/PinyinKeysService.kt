@@ -277,9 +277,11 @@ class PinyinKeysService : InputMethodService(),
     private fun typeText(text: String) {
         showPasteChip.value = false
         if (practiceTyped(text)) return
-        clearAssist()
         val ic = currentInputConnection ?: return
         val isChinese = chinese.value && !sensitiveField.value
+        // Typing English makes a shown translation stale, so clear it. In Chinese mode keep
+        // it, so you can type the characters yourself while reading the cards.
+        if (!isChinese) clearAssist()
 
         if (isChinese) {
             val c = text.singleOrNull()
@@ -342,7 +344,7 @@ class PinyinKeysService : InputMethodService(),
             setComposing(composing.value.dropLast(1))
             return
         }
-        clearAssist()
+        if (!chinese.value) clearAssist()
         val ic = currentInputConnection ?: return
         // Backspace right after an autocorrect: put back what was typed.
         lastAutocorrect?.let { (original, corrected) ->

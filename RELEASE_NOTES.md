@@ -3,6 +3,10 @@ A personal Android keyboard that shows Chinese and pinyin for the English you ty
 **Install:** download `pinyin-keys-<version>.apk` below, open it on the phone, then turn on
 Pinyin Keys in the system keyboard settings. Add your Claude API key in the Pinyin Keys app.
 
+## New in 1.0.8
+- Top bar uses icons: 助/练 (Assist/Practice), 译 (Translate), 📋 (Paste).
+- Translation cards stay visible while typing in 中 mode; ⧉ on a card copies its pinyin.
+
 ## New in 1.0.7
 - Number pad for number, phone and date fields (amounts, PINs, codes), with the app's
   Done/Next/Go key and decimal, minus or phone symbols where the field allows them.
