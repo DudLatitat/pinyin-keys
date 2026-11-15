@@ -50,6 +50,11 @@ class Settings(context: Context) {
         get() = prefs.getBoolean("strict_tones", false)
         set(v) = prefs.edit().putBoolean("strict_tones", v).apply()
 
+    /** Offer to paste a screenshot taken in the last minute (needs photo permission). */
+    var suggestScreenshots: Boolean
+        get() = prefs.getBoolean("suggest_screenshots", false)
+        set(v) = prefs.edit().putBoolean("suggest_screenshots", v).apply()
+
     /** Recently used emoji, newest first. */
     var recentEmoji: List<String>
         get() = readList("recent_emoji")

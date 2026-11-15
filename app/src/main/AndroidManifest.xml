@@ -4,6 +4,13 @@
     <!-- Only used for the translation API call, and only when the user taps Translate. -->
     <uses-permission android:name="android.permission.INTERNET" />
 
+    <!-- Optional, off until the user turns on "Suggest new screenshots": lets the keyboard
+         see the newest screenshot so it can offer to paste it. -->
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+    <uses-permission
+        android:name="android.permission.READ_EXTERNAL_STORAGE"
+        android:maxSdkVersion="32" />
+
     <!-- allowBackup=false + dataExtractionRules: keep app data out of cloud backups. -->
     <application
         android:allowBackup="false"

@@ -37,6 +37,9 @@
   Clipboard history (owner's decision, CLAUDE.md updated): last 15 copies captured with
   OnPrimaryClipChangedListener; text in encrypted prefs, images copied to filesDir/clips and
   pasted via commitContent + FileProvider. Sensitive clips and password fields are skipped.
+- Screenshot suggestion (opt-in setting + READ_MEDIA_IMAGES): newest image in a Screenshots
+  folder from the last minute is offered via the Paste chip (Screenshots.kt); a MediaStore
+  ContentObserver runs only while the keyboard is shown. Copied only when Paste is tapped.
 - App icon: adaptive vector (white key with 中 on blue), with a monochrome layer.
 - Releases: run the Build workflow by hand with `release_version` (e.g. 1.0.0) to publish a
   full, signed GitHub Release `v<version>` using RELEASE_NOTES.md. Bump versionCode/versionName

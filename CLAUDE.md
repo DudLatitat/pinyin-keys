@@ -60,6 +60,10 @@ Git author identity: commits use the GitHub noreply email, never a personal emai
   private files) on the phone only and never sent anywhere. Clips Android marks as
   sensitive (e.g. from password managers) and copies made while a password field is
   focused are skipped.
+- Screenshots (owner's decision, opt-in): if the owner turns on "Suggest new screenshots"
+  and grants photo access, the keyboard looks only for an image in the Screenshots folder
+  taken within the last minute and offers to paste it. Nothing else in the photo library
+  is read, and the image is copied only when Paste is tapped.
 
 ## Dependencies
 

@@ -78,6 +78,14 @@ class PinyinKeysService : InputMethodService(),
     /** Things pasted with this keyboard, newest first (only text the user chose to paste). */
     private val clipHistory = mutableStateOf<List<String>>(emptyList())
     private val showPasteChip = mutableStateOf(false)
+    /** A new screenshot waiting to be offered; it's only copied if Paste is tapped. */
+    private var pendingScreenshot: android.net.Uri? = null
+    private var offeredScreenshot: android.net.Uri? = null
+    /** Notices new photos while the keyboard is open (only if screenshots are enabled). */
+    private val mediaObserver = object : android.database.ContentObserver(android.os.Handler(android.os.Looper.getMainLooper())) {
+        override fun onChange(selfChange: Boolean) = checkRecentScreenshot()
+    }
+    private var mediaObserverOn = false
     /** The newest copy, offered by the Paste button. */
     private var latestClip: String? = null
     private var lastSeenClipTime = 0L
@@ -179,11 +187,22 @@ class PinyinKeysService : InputMethodService(),
         shift.value = Shift.Off
         updateAutoCaps()
         checkRecentCopy()
+        checkRecentScreenshot()
+        if (!mediaObserverOn && Settings(this).suggestScreenshots && Screenshots.hasPermission(this)) {
+            contentResolver.registerContentObserver(
+                android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI, true, mediaObserver,
+            )
+            mediaObserverOn = true
+        }
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_RESUME)
     }
 
     override fun onFinishInputView(finishingInput: Boolean) {
         super.onFinishInputView(finishingInput)
+        if (mediaObserverOn) {
+            contentResolver.unregisterContentObserver(mediaObserver)
+            mediaObserverOn = false
+        }
         // Keyboard hidden: keep the typed letters as they are (they're already in the field).
         currentInputConnection?.finishComposingText()
         setComposing("")
@@ -370,6 +389,7 @@ class PinyinKeysService : InputMethodService(),
                 }
             } ?: return@launch
             latestClip = entry
+            pendingScreenshot = null
             updateHistory(listOf(entry) + clipHistory.value)
             showPasteChip.value = true
         }
@@ -398,7 +418,34 @@ class PinyinKeysService : InputMethodService(),
 
     private fun pasteFromChip() {
         showPasteChip.value = false
+        val shot = pendingScreenshot
+        if (shot != null) {
+            pendingScreenshot = null
+            // Copy the screenshot now (the user asked to paste it), keep it in the history.
+            lifecycleScope.launch {
+                val entry = withContext(Dispatchers.IO) { saveImage(shot) }
+                if (entry == null) { toast("Couldn't read that screenshot."); return@launch }
+                updateHistory(listOf(entry) + clipHistory.value)
+                pasteEntry(entry)
+            }
+            return
+        }
         latestClip?.let(::pasteEntry)
+    }
+
+    /** If enabled, offer a screenshot taken in the last minute (each one only once). */
+    private fun checkRecentScreenshot() {
+        if (sensitiveField.value) return
+        lifecycleScope.launch {
+            val uri = withContext(Dispatchers.IO) {
+                if (!Settings(this@PinyinKeysService).suggestScreenshots) null
+                else Screenshots.recent(this@PinyinKeysService)
+            } ?: return@launch
+            if (uri == offeredScreenshot) return@launch
+            offeredScreenshot = uri
+            pendingScreenshot = uri
+            showPasteChip.value = true
+        }
     }
 
     private fun updateHistory(list: List<String>) {

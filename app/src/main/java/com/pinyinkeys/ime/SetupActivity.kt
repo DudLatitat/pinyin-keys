@@ -7,6 +7,8 @@ import android.provider.Settings as SystemSettings
 import android.view.inputmethod.InputMethodManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -123,6 +125,31 @@ class SetupActivity : ComponentActivity() {
                             Text("Require tone numbers (e.g. ni3)", Modifier.weight(1f))
                             Switch(checked = strict, onCheckedChange = { strict = it; settings.strictTones = it })
                         }
+                        HorizontalDivider()
+                        Text("Clipboard", style = MaterialTheme.typography.titleMedium)
+                        var shots by remember {
+                            mutableStateOf(settings.suggestScreenshots && Screenshots.hasPermission(this@SetupActivity))
+                        }
+                        // Asks Android for photo access; the switch turns on only if it's granted.
+                        val askPhotos = rememberLauncherForActivityResult(
+                            ActivityResultContracts.RequestPermission()
+                        ) { granted ->
+                            settings.suggestScreenshots = granted
+                            shots = granted
+                        }
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("Suggest new screenshots to paste", Modifier.weight(1f))
+                            Switch(checked = shots, onCheckedChange = { on ->
+                                if (!on) { settings.suggestScreenshots = false; shots = false }
+                                else if (Screenshots.hasPermission(this@SetupActivity)) {
+                                    settings.suggestScreenshots = true; shots = true
+                                } else askPhotos.launch(Screenshots.permission)
+                            })
+                        }
+                        Text(
+                            "Needs photo access. Only a screenshot from the last minute is looked at.",
+                            style = MaterialTheme.typography.bodySmall,
+                        )
                         Text(
                             "Your text is sent to the translation API only when you tap Translate.",
                             style = MaterialTheme.typography.bodySmall,
