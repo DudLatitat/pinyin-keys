@@ -1,0 +1,40 @@
+name: Build
+
+on:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: write  # needed to create a GitHub Release
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      # No Gradle wrapper is committed; this action installs the pinned Gradle version.
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.11.1"
+      - name: Build debug APK
+        run: gradle :app:assembleDebug --no-daemon
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pinyin-keys-debug
+          path: app/build/outputs/apk/debug/*.apk
+      # Until the signing keystore exists, publish the debug APK as a prerelease.
+      - name: Publish prerelease
+        if: github.ref_type == 'branch'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="debug-${GITHUB_REF_NAME//\//-}"
+          cp app/build/outputs/apk/debug/app-debug.apk pinyin-keys-debug.apk
+          gh release delete "$TAG" --yes --cleanup-tag || true
+          gh release create "$TAG" pinyin-keys-debug.apk --prerelease \
+            --target "$GITHUB_SHA" --title "Debug build ($GITHUB_REF_NAME)" \
+            --notes "Debug build of $GITHUB_SHA. Not signed for release."

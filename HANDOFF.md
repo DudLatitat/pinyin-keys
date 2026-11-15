@@ -1,15 +1,14 @@
 # Handoff: WeChat Pinyin Keyboard (Android)
 
 ## Status (start here)
-- Done: repo created (public), CLAUDE.md rules, this handoff, .gitignore. No app code yet.
-- Next: Milestone 1 (bare keyboard) plus a GitHub Actions workflow that builds a signed
-  release APK and attaches it to a GitHub Release.
+- Done: repo, rules, Milestone 1 code (Compose QWERTY IME, switch-back key, setup
+  screen) and a CI workflow that builds a debug APK and publishes it as a prerelease.
+- Next: owner tests Milestone 1 in WeChat; then signed release builds and Milestone 2.
   - The signing keystore does not exist yet. Ask the owner to create one and add it as
     Actions secrets (base64 keystore + passwords + alias); never generate or commit it here.
     Until then, build a debug APK so Milestone 1 can be tested.
 - No Android SDK in the cloud workspace: app code is compiled only by CI. Read build
   failures from the workflow's job annotations/logs.
-- Translate trigger: still unanswered. Ask first; default to a button.
 - Work in this repo only. Do not read or reference any other repository.
 
 ## What this is
@@ -102,10 +101,10 @@ See CLAUDE.md ("This repo is PUBLIC" and "Data stays on the phone"); those rules
 
 Ship each milestone as a working build before starting the next.
 
-## Open questions (ask the user, don't guess)
-- Should translation happen when the user taps a Translate button, or automatically after a pause in typing? Default to the **button** until answered; it's cheaper and less distracting.
-- Should explanations stay English-only, or gradually mix in simple Chinese as the user improves?
-- Should a Chinese→English mode for explaining received messages (pasted or copied) be in scope later?
+## Answered questions
+- Translation trigger: a **Translate button** only. No auto-translate after a pause.
+- Explanations: **English-only** for now.
+- Chinese→English mode for received messages: maybe later, **not in scope now**.
 
 ## Out of scope
 - A general-purpose pinyin input method with candidate lists
