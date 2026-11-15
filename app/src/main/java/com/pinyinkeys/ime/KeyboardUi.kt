@@ -155,7 +155,7 @@ fun KeyboardUi(
                 }
             }
             val keys: @Composable () -> Unit = {
-                Keys(page, { page = it }, shift, onShift, chinese, onToggleChinese, onText, onBackspace, onEnter)
+                Keys(page, { page = it }, shift, onShift, chinese, onToggleChinese, onText, onBackspace, onEnter, onSwitchKeyboard)
             }
             // BoxWithConstraints tells us how wide the keyboard window is.
             BoxWithConstraints(Modifier.fillMaxWidth()) {
@@ -186,7 +186,7 @@ fun KeyboardUi(
 
 /**
  * The slim bar above the keys: mode switch, Translate (or Restart), the next action
- * (Insert Chinese / Hint), and a button to switch back to your other keyboard.
+ * (Insert Chinese / Hint).
  */
 @Composable
 private fun Toolbar(
@@ -225,7 +225,6 @@ private fun Toolbar(
         } else {
             Spacer(Modifier.weight(1f))
         }
-        Pill("⌨", onClick = onSwitchKeyboard)
     }
 }
 
@@ -282,6 +281,7 @@ private fun Keys(
     onText: (String) -> Unit,
     onBackspace: () -> Unit,
     onEnter: () -> Unit,
+    onSwitchKeyboard: () -> Unit,
 ) {
     val kb = LocalKb.current
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -313,12 +313,13 @@ private fun Keys(
             }
         }
         KeyRow {
-            Key(if (page == 0) "!#1" else "ABC", 1.5f, function = true) { onPage(if (page == 0) 1 else 0) }
+            Key(if (page == 0) "!#1" else "ABC", 1.4f, function = true) { onPage(if (page == 0) 1 else 0) }
+            Key("🌐", 1f, function = true, onClick = onSwitchKeyboard)
             LanguageKey(chinese, onToggleChinese)
             Key(if (chinese) "，" else ",", 1f) { onText(",") }
-            Key("␣", 4f) { onText(" ") }
+            Key("␣", 3.4f) { onText(" ") }
             Key(if (chinese) "。" else ".", 1f) { onText(".") }
-            Key("⏎", 1.5f, function = true, onClick = onEnter)
+            Key("⏎", 1.4f, function = true, onClick = onEnter)
         }
     }
 }
