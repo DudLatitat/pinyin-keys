@@ -118,7 +118,7 @@ class ClaudeTranslationService(
     private fun post(body: String): String {
         val url = URL(baseUrl.trimEnd('/') + "/v1/messages")
         if (url.protocol != "https") throw TranslationException("Base URL must start with https://")
-        val conn = (url.openConnection() as HttpURLConnection).apply {
+        val conn = try { (url.openConnection() as HttpURLConnection).apply {
             requestMethod = "POST"
             connectTimeout = 15_000
             readTimeout = 60_000
@@ -126,6 +126,10 @@ class ClaudeTranslationService(
             setRequestProperty("content-type", "application/json")
             setRequestProperty("x-api-key", apiKey)
             setRequestProperty("anthropic-version", API_VERSION)
+        } } catch (e: IllegalArgumentException) {
+            // A header value with a character HTTP doesn't allow (almost always the key).
+            Log.w(TAG, "Invalid header value")
+            throw TranslationException("API key has invalid characters. Paste it again in Pinyin Keys settings.", e)
         }
         try {
             conn.outputStream.use { it.write(body.toByteArray(Charsets.UTF_8)) }

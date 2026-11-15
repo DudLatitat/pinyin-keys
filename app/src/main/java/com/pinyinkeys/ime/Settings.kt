@@ -21,17 +21,26 @@ class Settings(context: Context) {
         EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
     )
 
+    /**
+     * Pasted keys sometimes carry invisible characters (line breaks, non-breaking or
+     * zero-width spaces). Those aren't allowed in an HTTP header, so keep only the
+     * visible ASCII characters an API key can contain. Applied on save and on read,
+     * which also repairs a key saved before this fix.
+     */
     var apiKey: String
-        get() = prefs.getString("api_key", "") ?: ""
-        set(v) = prefs.edit().putString("api_key", v.trim()).apply()
+        get() = clean(prefs.getString("api_key", "") ?: "")
+        set(v) = prefs.edit().putString("api_key", clean(v)).apply()
 
     var baseUrl: String
-        get() = prefs.getString("base_url", null) ?: ClaudeTranslationService.DEFAULT_BASE_URL
-        set(v) = prefs.edit().putString("base_url", v.trim().ifEmpty { ClaudeTranslationService.DEFAULT_BASE_URL }).apply()
+        get() = clean(prefs.getString("base_url", null) ?: "").ifEmpty { ClaudeTranslationService.DEFAULT_BASE_URL }
+        set(v) = prefs.edit().putString("base_url", clean(v).ifEmpty { ClaudeTranslationService.DEFAULT_BASE_URL }).apply()
 
     var model: String
-        get() = prefs.getString("model", null) ?: ClaudeTranslationService.DEFAULT_MODEL
-        set(v) = prefs.edit().putString("model", v.trim().ifEmpty { ClaudeTranslationService.DEFAULT_MODEL }).apply()
+        get() = clean(prefs.getString("model", null) ?: "").ifEmpty { ClaudeTranslationService.DEFAULT_MODEL }
+        set(v) = prefs.edit().putString("model", clean(v).ifEmpty { ClaudeTranslationService.DEFAULT_MODEL }).apply()
+
+    /** True if the saved key has the usual Claude API key shape (shown on the settings screen). */
+    val apiKeyLooksValid: Boolean get() = apiKey.startsWith("sk-ant-")
 
     /** Practice mode: require the tone number (e.g. "ni3"). Off by default. */
     var strictTones: Boolean
@@ -41,4 +50,6 @@ class Settings(context: Context) {
     /** Null when no API key is set yet. */
     fun translationService(): TranslationService? =
         apiKey.takeIf { it.isNotEmpty() }?.let { ClaudeTranslationService(it, baseUrl, model) }
+
+    private fun clean(v: String) = v.filter { it in '!'..'~' }
 }

@@ -74,7 +74,13 @@ class SetupActivity : ComponentActivity() {
                         var model by remember { mutableStateOf(settings.model) }
                         var saved by remember { mutableStateOf(false) }
 
-                        Text(if (hasKey) "API key: saved ✓" else "API key: not set")
+                        Text(
+                            when {
+                                !hasKey -> "API key: not set"
+                                settings.apiKeyLooksValid -> "API key: saved ✓"
+                                else -> "API key: saved, but it doesn't look like a Claude key (should start with sk-ant-)"
+                            }
+                        )
                         OutlinedTextField(
                             value = key,
                             onValueChange = { key = it; saved = false },
