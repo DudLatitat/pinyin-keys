@@ -13,13 +13,46 @@ object Prompts {
         - "en": the original English sentence.
         - "hanzi": the Chinese sentence, with Chinese punctuation.
         - "pinyin": the whole sentence in pinyin with tone marks, words separated by spaces.
-        - "syllables": one entry per Chinese character (skip punctuation and emoji), lowercase pinyin
-          with a tone number 1-5 (5 = neutral tone), e.g. "wo3", "le5". Use "v" for ü, e.g. "nv3".
-        - "chunks": the sentence split into meaningful words/particles, in order, covering every character.
-          Each has its hanzi, its pinyin with tone marks, and a short English grammar role such as
-          Subject, Verb, Object, Time, Place, Adverb, Measure word, Question particle, New state, Possessive.
         - Output only the JSON object.
     """.trimIndent()
+
+    val DETAILS_SYSTEM = """
+        You break down one Mandarin (Simplified Chinese) sentence for a beginner learner.
+        You get the English, the Chinese and its pinyin.
+        - "syllables": one entry per Chinese character (skip punctuation and emoji), lowercase pinyin
+          with a tone number 1-5 (5 = neutral tone), e.g. "wo3", "le5". Use "v" for ü, e.g. "nv3".
+        - "chunks": the sentence split into meaningful words/particles, in order, covering every character
+          (skip punctuation and emoji). Each has its hanzi, its pinyin with tone marks, and a short English
+          grammar role such as Subject, Verb, Object, Time, Place, Adverb, Measure word, Question particle,
+          New state, Possessive, Greeting.
+        - Output only the JSON object.
+    """.trimIndent()
+
+    const val DETAILS_SCHEMA = """
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["syllables", "chunks"],
+      "properties": {
+        "syllables": {"type": "array", "items": {"type": "string"}},
+        "chunks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["hanzi", "pinyin", "role"],
+            "properties": {
+              "hanzi": {"type": "string"},
+              "pinyin": {"type": "string"},
+              "role": {"type": "string"}
+            }
+          }
+        }
+      }
+    }
+    """
+
+    fun sentenceInput(s: Sentence): String = "English: ${s.en}\nChinese: ${s.hanzi}\nPinyin: ${s.pinyin}"
 
     /** JSON Schema for structured outputs. additionalProperties=false + required are needed for strict mode. */
     const val TRANSLATE_SCHEMA = """
@@ -33,25 +66,11 @@ object Prompts {
           "items": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["en", "hanzi", "pinyin", "syllables", "chunks"],
+            "required": ["en", "hanzi", "pinyin"],
             "properties": {
               "en": {"type": "string"},
               "hanzi": {"type": "string"},
-              "pinyin": {"type": "string"},
-              "syllables": {"type": "array", "items": {"type": "string"}},
-              "chunks": {
-                "type": "array",
-                "items": {
-                  "type": "object",
-                  "additionalProperties": false,
-                  "required": ["hanzi", "pinyin", "role"],
-                  "properties": {
-                    "hanzi": {"type": "string"},
-                    "pinyin": {"type": "string"},
-                    "role": {"type": "string"}
-                  }
-                }
-              }
+              "pinyin": {"type": "string"}
             }
           }
         }
@@ -81,11 +100,6 @@ object Prompts {
     """
 
     /** The user message for an explanation request. */
-    fun whyInput(s: Sentence): String = buildString {
-        appendLine("English: ${s.en}")
-        appendLine("Chinese: ${s.hanzi}")
-        appendLine("Pinyin: ${s.pinyin}")
-        append("Chunks: ")
-        append(s.chunks.joinToString(" | ") { "${it.hanzi} (${it.pinyin}) = ${it.role}" })
-    }
+    fun whyInput(s: Sentence, d: SentenceDetails): String =
+        sentenceInput(s) + "\nChunks: " + d.chunks.joinToString(" | ") { "${it.hanzi} (${it.pinyin}) = ${it.role}" }
 }

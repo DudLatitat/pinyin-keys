@@ -36,8 +36,18 @@ class ClaudeTranslationService(
         }
     }
 
-    override fun explain(sentence: Sentence): String {
-        val text = call(Prompts.WHY_SYSTEM, Prompts.whyInput(sentence), Prompts.WHY_SCHEMA, maxTokens = 2000)
+    override fun details(sentence: Sentence): SentenceDetails {
+        val text = call(Prompts.DETAILS_SYSTEM, Prompts.sentenceInput(sentence), Prompts.DETAILS_SCHEMA, maxTokens = 4000)
+        return try {
+            json.decodeFromString(SentenceDetails.serializer(), text)
+        } catch (e: Exception) {
+            Log.w(TAG, "Bad JSON from API: ${e.javaClass.simpleName}")
+            throw TranslationException("Couldn't load breakdown. Try again.", e)
+        }
+    }
+
+    override fun explain(sentence: Sentence, details: SentenceDetails): String {
+        val text = call(Prompts.WHY_SYSTEM, Prompts.whyInput(sentence, details), Prompts.WHY_SCHEMA, maxTokens = 2000)
         return try {
             json.decodeFromString(WhyResult.serializer(), text).why.trim()
         } catch (e: Exception) {

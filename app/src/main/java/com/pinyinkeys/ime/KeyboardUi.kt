@@ -29,6 +29,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.ui.text.font.FontWeight
 import com.pinyinkeys.ime.translate.Sentence
+import com.pinyinkeys.ime.translate.SentenceDetails
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.material3.TextButton
@@ -59,7 +60,9 @@ fun KeyboardUi(
     assist: AssistState,
     onTranslate: () -> Unit,
     onInsertChinese: () -> Unit,
-    whyStates: Map<Sentence, WhyState>,
+    detailsStates: Map<Sentence, Load<SentenceDetails>>,
+    onExpand: (Sentence) -> Unit,
+    whyStates: Map<Sentence, Load<String>>,
     onWhy: (Sentence) -> Unit,
     onText: (String) -> Unit,
     onBackspace: () -> Unit,
@@ -78,7 +81,7 @@ fun KeyboardUi(
                     Modifier.widthIn(max = 720.dp).fillMaxWidth().padding(4.dp),
                     verticalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
-                    if (!sensitive) AssistPanel(assist, onTranslate, onInsertChinese, whyStates, onWhy)
+                    if (!sensitive) AssistPanel(assist, onTranslate, onInsertChinese, detailsStates, onExpand, whyStates, onWhy)
                     val rows = if (symbols) SYMBOL_ROWS else LETTER_ROWS
                     rows.forEachIndexed { i, row ->
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -138,7 +141,9 @@ private fun AssistPanel(
     state: AssistState,
     onTranslate: () -> Unit,
     onInsertChinese: () -> Unit,
-    whyStates: Map<Sentence, WhyState>,
+    detailsStates: Map<Sentence, Load<SentenceDetails>>,
+    onExpand: (Sentence) -> Unit,
+    whyStates: Map<Sentence, Load<String>>,
     onWhy: (Sentence) -> Unit,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -165,7 +170,7 @@ private fun AssistPanel(
                 state.result.sentences.forEachIndexed { i, sentence ->
                     // key(): remember each card's expanded state separately, reset on a new translation.
                     androidx.compose.runtime.key(state.result, i) {
-                        SentenceCard(sentence, whyStates[sentence]) { onWhy(sentence) }
+                        SentenceCard(sentence, detailsStates[sentence], whyStates[sentence], { onExpand(sentence) }, { onWhy(sentence) })
                     }
                 }
             }
@@ -179,47 +184,66 @@ private fun AssistPanel(
  */
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun SentenceCard(sentence: Sentence, why: WhyState?, onWhy: () -> Unit) {
+private fun SentenceCard(
+    sentence: Sentence,
+    details: Load<SentenceDetails>?,
+    why: Load<String>?,
+    onExpand: () -> Unit,
+    onWhy: () -> Unit,
+) {
     var expanded by remember { mutableStateOf(false) }
     Column(
         Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(8.dp))
             .background(MaterialTheme.colorScheme.surface)
-            .clickable { expanded = !expanded }
+            .clickable {
+                expanded = !expanded
+                if (expanded) onExpand()
+            }
             .padding(horizontal = 12.dp, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         Text(sentence.hanzi, fontSize = 24.sp, color = MaterialTheme.colorScheme.onSurface)
         Text(sentence.pinyin, fontSize = 15.sp, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Medium)
-        if (expanded) {
-            FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                sentence.chunks.forEach { chunk ->
-                    Column(
-                        Modifier
-                            .clip(RoundedCornerShape(6.dp))
-                            .background(MaterialTheme.colorScheme.secondaryContainer)
-                            .padding(horizontal = 8.dp, vertical = 4.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                    ) {
-                        Text(chunk.hanzi, fontSize = 18.sp, color = MaterialTheme.colorScheme.onSecondaryContainer)
-                        Text(chunk.pinyin, fontSize = 12.sp, color = MaterialTheme.colorScheme.primary)
-                        Text(chunk.role, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSecondaryContainer)
+        if (!expanded) return@Column
+        when (details) {
+            null, Load.Loading -> CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+            is Load.Error -> ErrorRow(details.message, onExpand)
+            is Load.Loaded -> {
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    details.value.chunks.forEach { chunk ->
+                        Column(
+                            Modifier
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(MaterialTheme.colorScheme.secondaryContainer)
+                                .padding(horizontal = 8.dp, vertical = 4.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                        ) {
+                            Text(chunk.hanzi, fontSize = 18.sp, color = MaterialTheme.colorScheme.onSecondaryContainer)
+                            Text(chunk.pinyin, fontSize = 12.sp, color = MaterialTheme.colorScheme.primary)
+                            Text(chunk.role, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSecondaryContainer)
+                        }
                     }
                 }
-            }
-            when (why) {
-                null -> TextButton(onClick = onWhy) { Text("Why?") }
-                WhyState.Loading -> CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
-                is WhyState.Loaded -> Text(why.text, fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurface)
-                is WhyState.Error -> Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(why.message, fontSize = 13.sp, color = MaterialTheme.colorScheme.error)
-                    TextButton(onClick = onWhy) { Text("Retry") }
+                when (why) {
+                    null -> TextButton(onClick = onWhy) { Text("Why?") }
+                    Load.Loading -> CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                    is Load.Loaded -> Text(why.value, fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurface)
+                    is Load.Error -> ErrorRow(why.message, onWhy)
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun ErrorRow(message: String, onRetry: () -> Unit) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(message, fontSize = 13.sp, color = MaterialTheme.colorScheme.error, modifier = Modifier.weight(1f))
+        TextButton(onClick = onRetry) { Text("Retry") }
     }
 }

@@ -8,7 +8,9 @@
   model), Translate button, sentence cards, Insert Chinese. Raw HTTPS to the Messages API with
   structured outputs (json_schema) and effort=low. Tested by the owner in WeChat: works.
 - Milestone 3 code written: tap a card for structure chips, "Why?" fetched on tap and cached
-  encrypted on the phone (WhyCache, keyed by SHA-256 of the sentence). Next: owner tests it.
+  encrypted on the phone (SentenceCache, keyed by SHA-256 of the sentence).
+- Speed: thinking disabled; Translate returns only en/hanzi/pinyin. Chunks + syllables load
+  when a card is opened (cached like Why). Owner measured 6-9 s before this change.
   - Signing: keystore generated; CI signs the release when SIGNING_* Actions secrets are set.
 - No Android SDK in the cloud workspace: app code is compiled only by CI. Read build
   failures from the workflow's job annotations/logs.

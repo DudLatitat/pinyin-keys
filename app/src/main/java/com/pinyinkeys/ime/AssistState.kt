@@ -10,9 +10,9 @@ sealed interface AssistState {
     data class Error(val message: String) : AssistState
 }
 
-/** The "Why?" explanation for one sentence card. */
-sealed interface WhyState {
-    data object Loading : WhyState
-    data class Loaded(val text: String) : WhyState
-    data class Error(val message: String) : WhyState
+/** Something loaded on demand for one sentence card (its breakdown, or its "Why?"). */
+sealed interface Load<out T> {
+    data object Loading : Load<Nothing>
+    data class Loaded<T>(val value: T) : Load<T>
+    data class Error(val message: String) : Load<Nothing>
 }

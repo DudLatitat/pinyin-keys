@@ -9,6 +9,9 @@ interface TranslationService {
     /** Blocking network call: run it off the main thread. Throws [TranslationException]. */
     fun translate(english: String): TranslationResult
 
+    /** Structure chips and per-character syllables for one sentence. Blocking. */
+    fun details(sentence: Sentence): SentenceDetails
+
     /** 1–2 plain-English sentences on why [sentence] is structured that way. Blocking. */
-    fun explain(sentence: Sentence): String
+    fun explain(sentence: Sentence, details: SentenceDetails): String
 }

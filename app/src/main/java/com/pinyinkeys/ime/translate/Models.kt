@@ -12,11 +12,17 @@ data class Chunk(
     val role: String,
 )
 
+/** What Translate returns: kept small so it comes back fast. */
 @Serializable
 data class Sentence(
     val en: String,
     val hanzi: String,
     val pinyin: String,
+)
+
+/** Loaded only when a card is tapped. */
+@Serializable
+data class SentenceDetails(
     /** One per character, number-tone form ("wo3"). Drives Practice mode later. */
     val syllables: List<String>,
     val chunks: List<Chunk>,
