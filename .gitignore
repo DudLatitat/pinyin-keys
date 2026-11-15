@@ -1,0 +1,26 @@
+# Build outputs
+build/
+.gradle/
+*.apk
+*.aab
+*.ap_
+*.dex
+# Local machine config (SDK path, sometimes secrets)
+local.properties
+.idea/
+*.iml
+.DS_Store
+captures/
+# Signing keys: these live only in GitHub Actions secrets
+*.jks
+*.keystore
+*.p12
+keystore.properties
+signing.properties
+# Secrets / env files
+.env
+*.env
+secrets.properties
+google-services.json
+# Logs
+*.log

@@ -1,0 +1,101 @@
+# Handoff: WeChat Pinyin Keyboard (Android)
+
+## What this is
+A personal Android keyboard app (single user, not for distribution). While typing English in a chat app such as WeChat, it shows the Chinese translation and pinyin for each sentence. It can also coach the user to type the Chinese themselves in pinyin. Tapping a sentence shows a short breakdown of its structure.
+
+The user is a beginner in Chinese and new to Android development. Keep the code readable, and explain non-obvious Android concepts in short code comments.
+
+Target device: a foldable phone. The layout must work on both the narrow cover screen and the wide inner screen.
+
+## Core decisions (already made)
+1. **Build a custom keyboard (IME), not an overlay.** Use `InputMethodService`. Don't use an accessibility service or screen reading.
+2. **Two modes, switched with a toggle at the top of the keyboard panel:**
+   - **Assist:** shows the Chinese and pinyin. An "Insert Chinese" button replaces the English in the text field with the Chinese.
+   - **Practice:** hides the Chinese. The user types each syllable in pinyin, and the keyboard checks it against the target and commits the correct character when it matches. Show a "Next: nǐ"-style prompt and a hint button. This is NOT a general pinyin IME: the target sentence is already known, so matching is only against the expected syllable, and no dictionary is needed.
+3. **Explanations stay out of the way.** By default each sentence card shows only the Chinese and pinyin.
+   - Tap a sentence → a row of chips showing its structure, e.g. `我 · Subject` `想 · Verb` `你 · Object` `了 · New state`.
+   - Tap "Why?" → one or two sentences explaining the structure. Fetch this lazily, only when "Why?" is tapped.
+   - Tap the sentence again → collapse it.
+4. **Casual tone by default.** The messages are casual texts to close friends and family, so translations should be natural spoken Mandarin, not textbook phrasing.
+
+## UI reference
+The user approved a mockup with these elements, from top to bottom:
+- A row with the mode toggle (Assist / Practice)
+- A list of sentence cards, each showing hanzi (large) and pinyin with tone marks (accent color) under it, expanding to structure chips and then "Why?"
+- An action row: "Insert Chinese" (Assist) or a progress/hint bar (Practice)
+- A QWERTY key grid
+- Also add: a key to switch back to the previous keyboard (`switchToPreviousInputMethod()`), plus backspace, space, and enter.
+
+## Suggested stack
+- Kotlin with Jetpack Compose for the keyboard UI. Standard Gradle (Kotlin DSL) setup.
+- **Compose inside an IME needs extra wiring.** The IME window has no `LifecycleOwner` or `SavedStateRegistryOwner`. Make the service implement both (plus `ViewModelStoreOwner`) and set them on the window's decor view with `setViewTreeLifecycleOwner` and its siblings before creating the `ComposeView`, or Compose crashes.
+- Room for the saved-sentences table.
+- Ktor or OkHttp plus kotlinx.serialization for API calls.
+
+## Translation backend
+Use the Claude API (Messages endpoint) with JSON-only output. Keep the model name in settings; default to `claude-haiku-5-5` for speed.
+
+**Call 1: translate** (on demand; see "Open questions")
+Input: the English text. Output:
+```json
+{
+  "sentences": [
+    {
+      "en": "I miss you.",
+      "hanzi": "我想你了。",
+      "pinyin": "wǒ xiǎng nǐ le.",
+      "syllables": ["wo3","xiang3","ni3","le5"],
+      "chunks": [
+        {"hanzi":"我","pinyin":"wǒ","role":"Subject"},
+        {"hanzi":"想","pinyin":"xiǎng","role":"Verb"},
+        {"hanzi":"你","pinyin":"nǐ","role":"Object"},
+        {"hanzi":"了","pinyin":"le","role":"New state"}
+      ]
+    }
+  ]
+}
+```
+- `syllables` drives Practice mode: one entry per character, number-tone form. Matching ignores tones by default; make tone strictness a setting.
+- Validate the JSON. If parsing fails, show an inline "Couldn't translate. Try again." message and never crash the keyboard.
+
+**Call 2: why** (lazy, cached per sentence)
+Input: the sentence's hanzi, its English, and its chunks. Output: 1–2 plain-English sentences on why it's structured that way, e.g. "No 'did' and no word flip; add 吗 to a statement to make a yes/no question."
+
+**API key:** entered on a settings screen and stored with EncryptedSharedPreferences (or the Jetpack DataStore equivalent). Never hardcode it or commit it to git.
+
+**Provider choice and swappability:** The app is used mainly in the US, and the owner chose Claude Haiku 5.5 as the default provider. In translation comparisons for English to Simplified Chinese, Claude, DeepSeek and Gemini are close; DeepSeek has a slight edge, but those benchmarks use formal text, not casual texts. Haiku is the cheapest of the three and handles the structured JSON well.
+- Put all translation behind a `TranslationService` interface. `ClaudeTranslationService` is the only implementation for now.
+- Keep provider-specific details (base URL, model name, auth header, request/response mapping) inside the implementation. The rest of the app only sees the `sentences` / `why` data shapes above.
+- Keep the prompt text in one place, shared by all providers, so a second provider gets the same instructions.
+- Don't build a second provider now. The goal is that adding one later (e.g. `DeepSeekTranslationService` plus a provider picker in settings) is a small change, not a rebuild, if the user finds Claude's phrasing off.
+- A configurable base URL (entered on the phone, never committed) also allows pointing at a self-hosted relay later, for use from regions where the API is blocked.
+
+## Reading and writing WeChat's text field
+- Read: `currentInputConnection.getExtractedText(ExtractedTextRequest(), 0)`, falling back to `getTextBeforeCursor(large N, 0)`.
+- Replace (Assist): delete the English (`deleteSurroundingText` or select-all followed by `commitText`), then `commitText(hanzi, 1)`.
+- Test in WeChat early. Some apps return partial extracted text, so log the length (not the content) during development.
+
+## Privacy and safety
+See CLAUDE.md ("This repo is PUBLIC" and "Data stays on the phone"); those rules win over anything here.
+- Send text to the API only on an explicit trigger. Never send it in the background.
+- Do nothing in password or sensitive fields: check `EditorInfo.inputType` for password variations and `IME_FLAG_NO_PERSONALIZED_LEARNING`, and show a plain keyboard there.
+- Don't log message content. Saved sentences are stored only when the user taps save.
+
+## Milestones
+1. **Bare keyboard:** an IME that can be enabled in settings, QWERTY in Compose, types English in WeChat, and has a switch-back key. *Done when* the user can type and send an English message in WeChat with it.
+2. **Assist mode:** a Translate button sends the field's text, sentence cards render hanzi and pinyin, and "Insert Chinese" replaces the text. Settings screen for the API key.
+3. **Structure and Why:** tap-to-expand chips plus a lazy, cached "Why?".
+4. **Practice mode:** syllable matching, character-by-character commit, hint (reveals the next pinyin), and a progress prompt.
+5. **Saved sentences:** a bookmark button on each card, stored in Room, with a simple list screen in the app. Later this could export to another study app; keep the schema simple (en, hanzi, pinyin, chunks JSON, savedAt).
+
+Ship each milestone as a working build before starting the next.
+
+## Open questions (ask the user, don't guess)
+- Should translation happen when the user taps a Translate button, or automatically after a pause in typing? Default to the **button** until answered; it's cheaper and less distracting.
+- Should explanations stay English-only, or gradually mix in simple Chinese as the user improves?
+- Should a Chinese→English mode for explaining received messages (pasted or copied) be in scope later?
+
+## Out of scope
+- A general-purpose pinyin input method with candidate lists
+- Voice input
+- Any accounts, sync, analytics, or Play Store release
