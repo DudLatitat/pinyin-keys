@@ -391,13 +391,17 @@ private fun RowScope.Key(
     val view = LocalView.current
     val latestOnClick by rememberUpdatedState(onClick)
     if (repeat) {
-        // Held down: after a pause, keep repeating until released.
+        // Held down: after a short pause, keep repeating until released.
         LaunchedEffect(pressed) {
             if (!pressed) return@LaunchedEffect
-            delay(400)
+            // Start repeating sooner and speed up the longer it's held (like other keyboards):
+            // 50 ms per step at first, down to 20 ms.
+            delay(300)
+            var interval = 50L
             while (true) {
                 latestOnClick()
-                delay(60)
+                delay(interval)
+                if (interval > 20) interval -= 3
             }
         }
     }

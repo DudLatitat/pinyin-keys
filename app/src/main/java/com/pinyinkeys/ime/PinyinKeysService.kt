@@ -226,10 +226,29 @@ class PinyinKeysService : InputMethodService(),
         }
         clearAssist()
         val ic = currentInputConnection ?: return
+        val now = android.os.SystemClock.uptimeMillis()
+        val repeating = now - lastBackspaceAt < 150
+        lastBackspaceAt = now
+        if (repeating) {
+            // Held backspace: just delete. Each question to the other app (selection,
+            // capitals) is a round trip, and skipping them keeps the repeat fast.
+            ic.deleteSurroundingText(1, 0)
+            pendingCapsCheck = true
+            mainHandler.removeCallbacks(capsAfterRepeat)
+            mainHandler.postDelayed(capsAfterRepeat, 200)
+            return
+        }
         // If text is selected, delete the selection; otherwise delete one character.
         val selected = ic.getSelectedText(0)
         if (!selected.isNullOrEmpty()) ic.commitText("", 1) else ic.deleteSurroundingText(1, 0)
         updateAutoCaps()
+    }
+
+    private var lastBackspaceAt = 0L
+    private var pendingCapsCheck = false
+    /** After a held backspace is released, update auto-capitals once. */
+    private val capsAfterRepeat = Runnable {
+        if (pendingCapsCheck) { pendingCapsCheck = false; updateAutoCaps() }
     }
 
     // --- Shift and Chinese mode ---
