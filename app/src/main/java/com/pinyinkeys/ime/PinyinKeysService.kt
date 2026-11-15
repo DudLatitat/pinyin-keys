@@ -123,11 +123,24 @@ class PinyinKeysService : InputMethodService(),
 
     // --- Key actions. `currentInputConnection` is our link to the app's text field. ---
 
+    /**
+     * Any edit makes the shown translation stale (Insert Chinese would insert the wrong
+     * text), so typing clears it. Also cancels a translation still in progress.
+     */
+    private fun clearAssist() {
+        if (assistState.value == AssistState.Idle) return
+        translateJob?.cancel()
+        assistState.value = AssistState.Idle
+        detailsStates.clear(); whyStates.clear()
+    }
+
     private fun typeText(text: String) {
+        clearAssist()
         currentInputConnection?.commitText(text, 1)
     }
 
     private fun backspace() {
+        clearAssist()
         val ic = currentInputConnection ?: return
         // If text is selected, delete the selection; otherwise delete one character.
         val selected = ic.getSelectedText(0)
@@ -135,6 +148,7 @@ class PinyinKeysService : InputMethodService(),
     }
 
     private fun enter() {
+        clearAssist()
         val ic = currentInputConnection ?: return
         val info = currentInputEditorInfo
         // Many chat apps set an "action" (Send, Go, ...) on their field. If there is one,
