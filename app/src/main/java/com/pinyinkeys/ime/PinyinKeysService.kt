@@ -290,7 +290,7 @@ class PinyinKeysService : InputMethodService(),
             return
         }
         // Anything else ends the word: maybe autocorrect it, then learn it.
-        finishWord(ic, autocorrectOnly = c == ' ' || c in ".,?!")
+        finishWord(ic, autocorrectOnly = c != null && (c == ' ' || c in ".,?!"))
         if (c != null && c in ".?!") prevWord = ""  // new sentence
         suggestions.value = if (c == ' ' && suggestionsAllowed()) nextWords?.predict(prevWord) ?: emptyList() else emptyList()
 
