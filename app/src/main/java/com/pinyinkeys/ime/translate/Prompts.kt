@@ -9,8 +9,8 @@ object Prompts {
         Rules:
         - Use casual, everyday phrasing a native speaker would actually text. Avoid textbook or formal wording.
         - Keep the meaning and tone (warmth, jokes, teasing). Keep emoji as they are.
-        - Split the input into sentences. Return one entry per sentence, in order.
-        - "en": the original English sentence.
+        - The input is numbered lines, one sentence each. Return exactly one entry per line,
+          in the same order (don't merge or split lines).
         - "hanzi": the Chinese sentence, with Chinese punctuation.
         - "pinyin": the whole sentence in pinyin with tone marks, words separated by spaces.
         - Output only the JSON object.
@@ -52,6 +52,10 @@ object Prompts {
     }
     """
 
+    /** "1. First sentence\n2. Second sentence" */
+    fun numberedLines(lines: List<String>): String =
+        lines.mapIndexed { i, l -> "${i + 1}. $l" }.joinToString("\n")
+
     fun sentenceInput(s: Sentence): String = "English: ${s.en}\nChinese: ${s.hanzi}\nPinyin: ${s.pinyin}"
 
     /** JSON Schema for structured outputs. additionalProperties=false + required are needed for strict mode. */
@@ -66,9 +70,8 @@ object Prompts {
           "items": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["en", "hanzi", "pinyin"],
+            "required": ["hanzi", "pinyin"],
             "properties": {
-              "en": {"type": "string"},
               "hanzi": {"type": "string"},
               "pinyin": {"type": "string"}
             }

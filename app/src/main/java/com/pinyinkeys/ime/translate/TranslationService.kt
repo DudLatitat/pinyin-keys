@@ -7,11 +7,17 @@ package com.pinyinkeys.ime.translate
  */
 interface TranslationService {
     /**
-     * Blocking network call: run it off the main thread. Throws [TranslationException].
-     * [onSentence] is called (on the calling thread) as each sentence finishes arriving,
-     * before the full result is returned.
+     * Translates each of [lines] (one English sentence each). Blocking network call: run
+     * it off the main thread. Throws [TranslationException]. [onLine] is called (on the
+     * calling thread) with each line's index as soon as that line's translation arrives.
      */
-    fun translate(english: String, onSentence: (Sentence) -> Unit = {}): TranslationResult
+    fun translateLines(lines: List<String>, onLine: (Int, Sentence) -> Unit = { _, _ -> }): List<Sentence>
+
+    /**
+     * Opens the connection to the API ahead of time, so the first Translate is faster.
+     * Sends no message text. Optional; failures are ignored.
+     */
+    fun warmUp() {}
 
     /** Structure chips and per-character syllables for one sentence. Blocking. */
     fun details(sentence: Sentence): SentenceDetails

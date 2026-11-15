@@ -49,6 +49,10 @@ Git author identity: commits use the GitHub noreply email, never a personal emai
   Never in the background, never automatically, never to any other host.
 - The only network permission use is that API call over HTTPS. No other outbound
   requests (no update checks, no remote config, no fonts or assets from the web).
+- Exception (owner's decision): when the keyboard opens in a non-sensitive field, it may
+  send one small request to the configured API (list models) to set up the connection
+  early, at most once a minute. It carries the API key but never any typed or message text.
+- Translations are cached on the phone (encrypted) so repeated sentences need no request.
 - Never log message content, translations, or the API key. Log lengths and error
   types only. Strip `Log.d`/`Log.v` in release builds.
 - Password and sensitive fields: if `EditorInfo.inputType` is a password variation or

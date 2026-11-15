@@ -24,21 +24,44 @@ class ClaudeTranslationService(
 
     private val json = Json { ignoreUnknownKeys = true }
 
-    override fun translate(english: String, onSentence: (Sentence) -> Unit): TranslationResult {
-        // Stream the reply and hand over each sentence as soon as it's complete.
+    override fun translateLines(lines: List<String>, onLine: (Int, Sentence) -> Unit): List<Sentence> {
+        // Stream the reply and hand over each line as soon as it's complete.
         val scanner = JsonItemScanner()
-        val text = call(Prompts.TRANSLATE_SYSTEM, english, Prompts.TRANSLATE_SCHEMA, maxTokens = 8000) { delta ->
+        var index = 0
+        val text = call(Prompts.TRANSLATE_SYSTEM, Prompts.numberedLines(lines), Prompts.TRANSLATE_SCHEMA, maxTokens = 8000) { delta ->
             scanner.append(delta).forEach { item ->
-                runCatching { json.decodeFromString(Sentence.serializer(), item) }.getOrNull()?.let(onSentence)
+                val r = runCatching { json.decodeFromString(LineResult.serializer(), item) }.getOrNull()
+                if (r != null && index < lines.size) onLine(index, Sentence(lines[index], r.hanzi, r.pinyin))
+                index++
             }
         }
-        return try {
-            json.decodeFromString(TranslationResult.serializer(), text)
+        val results = try {
+            json.decodeFromString(LineResults.serializer(), text).sentences
         } catch (e: Exception) {
             Log.w(TAG, "Bad JSON from API: ${e.javaClass.simpleName}")
             throw TranslationException("Couldn't translate (E1: unexpected reply shape). Try again.", e)
-        }.also {
-            if (it.sentences.isEmpty()) throw TranslationException("Nothing to translate.")
+        }
+        if (results.size != lines.size) {
+            Log.w(TAG, "Line count mismatch: ${results.size} vs ${lines.size}")
+            throw TranslationException("Couldn't translate (E5: lines didn't match). Try again.")
+        }
+        return results.mapIndexed { i, r -> Sentence(lines[i], r.hanzi, r.pinyin) }
+    }
+
+    override fun warmUp() {
+        // A tiny, free request (list one model) that sets up the secure connection, which
+        // Android then keeps open for the real request. Carries the API key, no message text.
+        runCatching {
+            val url = URL(baseUrl.trimEnd('/') + "/v1/models?limit=1")
+            if (url.protocol != "https") return
+            val conn = (url.openConnection() as HttpURLConnection).apply {
+                connectTimeout = 10_000
+                readTimeout = 10_000
+                setRequestProperty("x-api-key", apiKey)
+                setRequestProperty("anthropic-version", API_VERSION)
+            }
+            val stream = if (conn.responseCode in 200..299) conn.inputStream else conn.errorStream
+            stream?.use { it.readBytes() }  // read fully so the connection can be reused
         }
     }
 

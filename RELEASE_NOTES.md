@@ -3,6 +3,13 @@ A personal Android keyboard that shows Chinese and pinyin for the English you ty
 **Install:** download `pinyin-keys-<version>.apk` below, open it on the phone, then turn on
 Pinyin Keys in the system keyboard settings. Add your Claude API key in the Pinyin Keys app.
 
+## New in 1.0.6
+- Faster Translate:
+  - A built-in phrasebook of ~140 common chat sentences translates instantly, offline.
+  - Every translated sentence is remembered on the phone; repeats are instant and free.
+  - Only new sentences are sent, and replies are shorter.
+  - The connection to the translation service is set up when the keyboard opens.
+
 ## New in 1.0.5
 - Tapping a suggestion keeps the suggestion bar open with next-word guesses.
 

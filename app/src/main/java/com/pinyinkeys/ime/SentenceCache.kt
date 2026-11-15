@@ -34,6 +34,18 @@ class SentenceCache(context: Context) {
     fun putDetails(s: Sentence, d: SentenceDetails) =
         put("details:" + key(s), json.encodeToString(SentenceDetails.serializer(), d))
 
+    /** A sentence translated before (keyed by its normalized English). */
+    fun getTranslation(english: String): Sentence? =
+        prefs.getString("tr:" + hash(Translator.normalize(english)), null)?.let {
+            runCatching { json.decodeFromString(Sentence.serializer(), it) }.getOrNull()?.copy(en = english)
+        }
+
+    fun putTranslation(english: String, s: Sentence) =
+        put("tr:" + hash(Translator.normalize(english)), json.encodeToString(Sentence.serializer(), s))
+
+    private fun hash(text: String): String =
+        MessageDigest.getInstance("SHA-256").digest(text.toByteArray()).joinToString("") { "%02x".format(it) }
+
     private fun put(k: String, v: String) {
         // Keep the cache small: start over past MAX_ENTRIES (simple, and rarely hit).
         val editor = prefs.edit()
@@ -46,5 +58,5 @@ class SentenceCache(context: Context) {
         return bytes.joinToString("") { "%02x".format(it) }
     }
 
-    companion object { private const val MAX_ENTRIES = 2000 }
+    companion object { private const val MAX_ENTRIES = 5000 }
 }

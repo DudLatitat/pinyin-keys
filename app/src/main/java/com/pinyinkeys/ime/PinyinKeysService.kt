@@ -211,6 +211,7 @@ class PinyinKeysService : InputMethodService(),
         updateAutoCaps()
         checkRecentCopy()
         checkRecentScreenshot()
+        warmUpConnection()
         resetWord()
         if (english == null) lifecycleScope.launch {
             english = withContext(Dispatchers.IO) {
@@ -823,22 +824,23 @@ class PinyinKeysService : InputMethodService(),
         // lifecycleScope is cancelled automatically when the keyboard service is destroyed.
         translateJob = lifecycleScope.launch {
             val job = coroutineContext[Job]
-            val partial = mutableListOf<com.pinyinkeys.ime.translate.Sentence>()
+            // Cards by sentence position; cached ones fill in instantly, the rest as they arrive.
+            val partial = sortedMapOf<Int, com.pinyinkeys.ime.translate.Sentence>()
             assistState.value = try {
                 // Dispatchers.IO: network must not run on the main (UI) thread.
                 val result = withContext(Dispatchers.IO) {
-                    service.translate(text) { sentence ->
-                        // Called on the network thread as each sentence arrives: show it right away.
+                    Translator(this@PinyinKeysService, service).translate(text) { i, sentence ->
+                        // Called on a background thread as each sentence is ready: show it right away.
                         mainHandler.post {
                             if (translateJob != job || job?.isActive != true) return@post
-                            partial += sentence
+                            partial[i] = sentence
                             assistState.value = AssistState.Result(
-                                com.pinyinkeys.ime.translate.TranslationResult(partial.toList()), complete = false,
+                                com.pinyinkeys.ime.translate.TranslationResult(partial.values.toList()), complete = false,
                             )
                         }
                     }
                 }
-                AssistState.Result(result)
+                AssistState.Result(com.pinyinkeys.ime.translate.TranslationResult(result))
             } catch (e: TranslationException) {
                 AssistState.Error(e.userMessage)
             } catch (e: Exception) {
@@ -936,6 +938,22 @@ class PinyinKeysService : InputMethodService(),
         Load.Error(fallbackError)
     }
 
+    private var lastWarmUpAt = 0L
+
+    /**
+     * When the keyboard opens, set up the API connection ahead of time so Translate is
+     * faster. Sends no message text (owner's decision; see CLAUDE.md). At most once a minute.
+     */
+    private fun warmUpConnection() {
+        if (sensitiveField.value) return
+        val now = android.os.SystemClock.uptimeMillis()
+        if (now - lastWarmUpAt < 60_000) return
+        lastWarmUpAt = now
+        lifecycleScope.launch(Dispatchers.IO) {
+            Settings(this@PinyinKeysService).translationService()?.warmUp()
+        }
+    }
+
     // --- Practice mode ---
 
     private fun setMode(m: Mode) {
@@ -964,7 +982,7 @@ class PinyinKeysService : InputMethodService(),
             val result = onDemand("Couldn't start practice. Try again.") { cache, service ->
                 strictTones = Settings(this@PinyinKeysService).strictTones
                 val svc = service()
-                val sentences = svc.translate(text).sentences
+                val sentences = Translator(this@PinyinKeysService, svc).translate(text)
                 val units = sentences.map { s ->
                     val d = cache.getDetails(s) ?: svc.details(s).also { cache.putDetails(s, it) }
                     Practice.buildUnits(s, d)

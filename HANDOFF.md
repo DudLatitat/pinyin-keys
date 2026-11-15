@@ -46,6 +46,10 @@
   (setting, on by default; backspace undoes). NextWords predicts from the last two words:
   learned-on-device first, then assets/en_phrases.txt (Tatoeba, CC BY 2.0 FR, built by
   tools/build_phrase_table.py), then common starters.
+- Translate speed: Translator.kt splits sentences locally, answers from Phrasebook
+  (assets/phrasebook.tsv, hand-written) or SentenceCache ("tr:" entries), and sends only
+  misses as numbered lines (model returns hanzi+pinyin per line). warmUp() = GET /v1/models
+  on keyboard open (no text; CLAUDE.md exception).
 - App icon: adaptive vector (white key with 中 on blue), with a monochrome layer.
 - Releases (owner: no prereleases): every signed CI build publishes a full release
   `v<versionName>` with RELEASE_NOTES.md, skipping if that version already exists. Bump

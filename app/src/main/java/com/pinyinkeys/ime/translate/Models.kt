@@ -28,6 +28,13 @@ data class SentenceDetails(
     val chunks: List<Chunk>,
 )
 
+/** What the model returns per numbered input line (the English is already known). */
+@Serializable
+data class LineResult(val hanzi: String, val pinyin: String)
+
+@Serializable
+data class LineResults(val sentences: List<LineResult>)
+
 @Serializable
 data class WhyResult(val why: String)
 
