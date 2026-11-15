@@ -78,6 +78,19 @@ class PinyinKeysService : InputMethodService(),
     /** Things pasted with this keyboard, newest first (only text the user chose to paste). */
     private val clipHistory = mutableStateOf<List<String>>(emptyList())
     private val showPasteChip = mutableStateOf(false)
+
+    // --- English suggestions / autocorrect ---
+    private var english: EnglishDictionary? = null
+    private var nextWords: NextWords? = null
+    /** The word being typed (tracked here, so we don't ask the app on every key). */
+    private var currentWord = ""
+    /** The last finished word, for next-word suggestions and learning. */
+    private var prevWord = ""
+    /** Set right after an autocorrect, so an immediate backspace can undo it. */
+    private var lastAutocorrect: Pair<String, String>? = null
+    private val suggestions = mutableStateOf<List<String>>(emptyList())
+    /** User tapped ‹ to see the tools instead of suggestions; cleared on the next letter. */
+    private val toolsForced = mutableStateOf(false)
     /** A new screenshot waiting to be offered; it's only copied if Paste is tapped. */
     private var pendingScreenshot: android.net.Uri? = null
     private var offeredScreenshot: android.net.Uri? = null
@@ -164,6 +177,11 @@ class PinyinKeysService : InputMethodService(),
                     onDeleteClip = { t -> updateHistory(clipHistory.value - t) },
                     onClearClipHistory = { updateHistory(emptyList()) },
                     showPasteChip = showPasteChip.value,
+                    pastePreview = pastePreview(),
+                    suggestions = suggestions.value,
+                    onSuggestion = ::pickSuggestion,
+                    toolsForced = toolsForced.value,
+                    onShowTools = { toolsForced.value = true },
                     onPasteChip = ::pasteFromChip,
                     onEdit = ::edit,
                     onOpenSettings = ::openSettings,
@@ -188,6 +206,13 @@ class PinyinKeysService : InputMethodService(),
         updateAutoCaps()
         checkRecentCopy()
         checkRecentScreenshot()
+        resetWord()
+        if (english == null) lifecycleScope.launch {
+            english = withContext(Dispatchers.IO) { EnglishDictionary.get(this@PinyinKeysService) }
+        }
+        if (nextWords == null) lifecycleScope.launch {
+            nextWords = withContext(Dispatchers.IO) { NextWords(this@PinyinKeysService).also { it.load() } }
+        }
         if (!mediaObserverOn && Settings(this).suggestScreenshots && Screenshots.hasPermission(this)) {
             contentResolver.registerContentObserver(
                 android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI, true, mediaObserver,
@@ -199,6 +224,7 @@ class PinyinKeysService : InputMethodService(),
 
     override fun onFinishInputView(finishingInput: Boolean) {
         super.onFinishInputView(finishingInput)
+        nextWords?.let { nw -> lifecycleScope.launch(Dispatchers.IO) { nw.save() } }
         if (mediaObserverOn) {
             contentResolver.unregisterContentObserver(mediaObserver)
             mediaObserverOn = false
@@ -252,6 +278,22 @@ class PinyinKeysService : InputMethodService(),
             return
         }
 
+        val c = text.singleOrNull()
+        lastAutocorrect = null
+        if (c != null && (c.isLetter() || (c == '\'' && currentWord.isNotEmpty()))) {
+            // A letter: part of the current word. Update suggestions for it.
+            ic.commitText(text, 1)
+            currentWord += c
+            if (shift.value == Shift.On) shift.value = Shift.Off
+            toolsForced.value = false
+            updateSuggestions()
+            return
+        }
+        // Anything else ends the word: maybe autocorrect it, then learn it.
+        finishWord(ic, autocorrectOnly = c == ' ' || c in ".,?!")
+        if (c != null && c in ".?!") prevWord = ""  // new sentence
+        suggestions.value = if (c == ' ' && suggestionsAllowed()) nextWords?.predict(prevWord) ?: emptyList() else emptyList()
+
         // English: two spaces after a word become ". " (like other keyboards).
         if (text == " ") {
             val before = ic.getTextBeforeCursor(2, 0)
@@ -282,6 +324,20 @@ class PinyinKeysService : InputMethodService(),
         }
         clearAssist()
         val ic = currentInputConnection ?: return
+        // Backspace right after an autocorrect: put back what was typed.
+        lastAutocorrect?.let { (original, corrected) ->
+            lastAutocorrect = null
+            val before = ic.getTextBeforeCursor(corrected.length + 1, 0)?.toString()
+            if (before == "$corrected ") {
+                ic.deleteSurroundingText(corrected.length + 1, 0)
+                ic.commitText(original, 1)
+                currentWord = original
+                updateSuggestions()
+                return
+            }
+        }
+        if (currentWord.isNotEmpty()) currentWord = currentWord.dropLast(1)
+        if (currentWord.isEmpty()) suggestions.value = emptyList() else updateSuggestions()
         val now = android.os.SystemClock.uptimeMillis()
         val repeating = now - lastBackspaceAt < 150
         lastBackspaceAt = now
@@ -301,6 +357,90 @@ class PinyinKeysService : InputMethodService(),
     }
 
     private var lastBackspaceAt = 0L
+
+    // --- Suggestions and autocorrect (English) ---
+
+    /** No suggestions, autocorrect or learning in passwords, emails, web addresses or numbers. */
+    private fun suggestionsAllowed(): Boolean {
+        if (sensitiveField.value || chinese.value) return false
+        val type = currentInputEditorInfo?.inputType ?: return false
+        if (type and InputType.TYPE_MASK_CLASS != InputType.TYPE_CLASS_TEXT) return false
+        val v = type and InputType.TYPE_MASK_VARIATION
+        return v != InputType.TYPE_TEXT_VARIATION_URI && v != InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS &&
+            v != InputType.TYPE_TEXT_VARIATION_WEB_EMAIL_ADDRESS
+    }
+
+    private fun updateSuggestions() {
+        suggestions.value = if (suggestionsAllowed()) english?.suggest(currentWord) ?: emptyList() else emptyList()
+    }
+
+    private fun resetWord() {
+        currentWord = ""
+        prevWord = ""
+        lastAutocorrect = null
+        suggestions.value = emptyList()
+        toolsForced.value = false
+    }
+
+    /**
+     * The current word is finished (space or punctuation). With [autocorrectOnly] and
+     * autocorrect on, replace an obvious typo; then remember the word for predictions.
+     */
+    private fun finishWord(ic: android.view.inputmethod.InputConnection, autocorrectOnly: Boolean) {
+        val word = currentWord
+        currentWord = ""
+        if (word.isEmpty() || !suggestionsAllowed()) return
+        var final = word
+        if (autocorrectOnly && Settings(this).autocorrect) {
+            val fix = english?.autocorrect(word)
+            if (fix != null && fix != word) {
+                ic.deleteSurroundingText(word.length, 0)
+                ic.commitText(fix, 1)
+                lastAutocorrect = word to fix
+                final = fix
+            }
+        }
+        nextWords?.learn(prevWord, final)
+        prevWord = final
+    }
+
+    /** A suggestion tapped: replace the word being typed (or add the next word) + space. */
+    private fun pickSuggestion(word: String) {
+        val ic = currentInputConnection ?: return
+        if (currentWord.isNotEmpty()) ic.deleteSurroundingText(currentWord.length, 0)
+        ic.commitText("$word ", 1)
+        currentWord = ""
+        lastAutocorrect = null
+        nextWords?.learn(prevWord, word)
+        prevWord = word
+        if (shift.value == Shift.On) shift.value = Shift.Off
+        suggestions.value = nextWords?.predict(word) ?: emptyList()
+        updateAutoCaps()
+    }
+
+    /** The cursor moved somewhere we didn't put it (tap in the text, etc.): start fresh. */
+    override fun onUpdateSelection(
+        oldSelStart: Int, oldSelEnd: Int, newSelStart: Int, newSelEnd: Int,
+        candidatesStart: Int, candidatesEnd: Int,
+    ) {
+        super.onUpdateSelection(oldSelStart, oldSelEnd, newSelStart, newSelEnd, candidatesStart, candidatesEnd)
+        val jump = kotlin.math.abs(newSelStart - oldSelStart)
+        if (newSelStart != newSelEnd || jump > currentWord.length + 2 && jump > 2) {
+            if (composing.value.isEmpty()) {
+                currentWord = ""
+                lastAutocorrect = null
+                suggestions.value = emptyList()
+            }
+        }
+    }
+
+    /** Short preview for the Paste button: start of the text, or "Image". */
+    private fun pastePreview(): String? = when {
+        pendingScreenshot != null -> "📷 Screenshot"
+        latestClip == null -> null
+        Clips.isImage(latestClip!!) -> "🖼 Image"
+        else -> latestClip!!.replace('\n', ' ').take(28)
+    }
     private var pendingCapsCheck = false
     /** After a held backspace is released, update auto-capitals once. */
     private val capsAfterRepeat = Runnable {
@@ -334,6 +474,8 @@ class PinyinKeysService : InputMethodService(),
         clearAssist()
         currentInputConnection?.commitText(text, 1)
         showPasteChip.value = false
+        currentWord = ""
+        suggestions.value = emptyList()
         updateAutoCaps()
     }
 
@@ -465,6 +607,8 @@ class PinyinKeysService : InputMethodService(),
 
     private fun edit(action: EditAction) {
         val ic = currentInputConnection ?: return
+        currentWord = ""
+        suggestions.value = emptyList()
         if (composing.value.isNotEmpty()) {
             ic.finishComposingText()
             setComposing("")
@@ -575,6 +719,9 @@ class PinyinKeysService : InputMethodService(),
         }
         clearAssist()
         practiceState.value = PracticeState.Idle
+        currentInputConnection?.let { finishWord(it, autocorrectOnly = false) }
+        prevWord = ""
+        suggestions.value = emptyList()
         val ic = currentInputConnection ?: return
         val info = currentInputEditorInfo
         // Many chat apps set an "action" (Send, Go, ...) on their field. If there is one,

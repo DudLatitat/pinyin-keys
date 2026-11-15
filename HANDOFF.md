@@ -40,6 +40,10 @@
 - Screenshot suggestion (opt-in setting + READ_MEDIA_IMAGES): newest image in a Screenshots
   folder from the last minute is offered via the Paste chip (Screenshots.kt); a MediaStore
   ContentObserver runs only while the keyboard is shown. Copied only when Paste is tapped.
+- Ribbon: suggestions while typing / next-word after space / Paste chip with preview / tools
+  (‹ shows tools). EnglishDictionary (assets/en_words.txt from AOSP LatinIME, Apache 2.0)
+  gives completions + typo corrections (keyboard-neighbour edits); autocorrect on space
+  (setting, on by default; backspace undoes). NextWords learns word pairs on device.
 - App icon: adaptive vector (white key with 中 on blue), with a monochrome layer.
 - Releases: run the Build workflow by hand with `release_version` (e.g. 1.0.0) to publish a
   full, signed GitHub Release `v<version>` using RELEASE_NOTES.md. Bump versionCode/versionName

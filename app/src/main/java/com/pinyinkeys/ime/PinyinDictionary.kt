@@ -8,7 +8,7 @@ data class Candidate(val word: String, val consumed: Int)
 
 /**
  * Offline pinyin -> Chinese lookup for the Chinese typing mode.
- * Data: assets/pinyin_dict.txt (from AOSP PinyinIME, Apache 2.0; see PINYIN_DICT_NOTICE.txt),
+ * Data: assets/pinyin_dict.txt (from AOSP PinyinIME, Apache 2.0; see DICTIONARY_NOTICE.txt),
  * one "pinyin<TAB>word<TAB>frequency" per line, sorted by pinyin, then most common first.
  * Everything is in memory (about 55k entries); nothing touches the network.
  */

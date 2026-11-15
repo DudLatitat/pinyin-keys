@@ -126,6 +126,17 @@ class SetupActivity : ComponentActivity() {
                             Switch(checked = strict, onCheckedChange = { strict = it; settings.strictTones = it })
                         }
                         HorizontalDivider()
+                        Text("Typing", style = MaterialTheme.typography.titleMedium)
+                        var autoFix by remember { mutableStateOf(settings.autocorrect) }
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("Autocorrect obvious typos", Modifier.weight(1f))
+                            Switch(checked = autoFix, onCheckedChange = { autoFix = it; settings.autocorrect = it })
+                        }
+                        Text(
+                            "Backspace right after a correction puts back what you typed.",
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                        HorizontalDivider()
                         Text("Clipboard", style = MaterialTheme.typography.titleMedium)
                         var shots by remember {
                             mutableStateOf(settings.suggestScreenshots && Screenshots.hasPermission(this@SetupActivity))

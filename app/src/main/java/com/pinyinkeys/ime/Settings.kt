@@ -55,7 +55,17 @@ class Settings(context: Context) {
         get() = prefs.getBoolean("suggest_screenshots", false)
         set(v) = prefs.edit().putBoolean("suggest_screenshots", v).apply()
 
-    /** Recently used emoji, newest first. */
+    /** Fix obvious typos when space is pressed. On by default. */
+    var autocorrect: Boolean
+        get() = prefs.getBoolean("autocorrect", true)
+        set(v) = prefs.edit().putBoolean("autocorrect", v).apply()
+
+    /** Learned word pairs for next-word suggestions ("prev<TAB>next<TAB>count" lines). */
+    var nextWordData: String
+        get() = prefs.getString("next_words", "") ?: ""
+        set(v) = prefs.edit().putString("next_words", v).apply()
+
+        /** Recently used emoji, newest first. */
     var recentEmoji: List<String>
         get() = readList("recent_emoji")
         set(v) = writeList("recent_emoji", v)

@@ -1,0 +1,15 @@
+pinyin_dict.txt is derived from rawdict_utf16_65105_freq.txt in the Android Open Source
+Project's PinyinIME (platform/packages/inputmethods/PinyinIME).
+
+Copyright (c) 2009, The Android Open Source Project
+Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
+
+Changes: converted to UTF-8, rare/traditional entries removed, reformatted and re-sorted
+(see tools/build_pinyin_dict.py).
+
+en_words.txt is derived from en_US_wordlist.combined.gz in the Android Open Source
+Project's LatinIME (platform/packages/inputmethods/LatinIME).
+Copyright (c) 2008, The Android Open Source Project
+Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
+Changes: reformatted, offensive/not-a-word entries removed, limited to the 80,000 most
+common words (see tools/build_english_dict.py).

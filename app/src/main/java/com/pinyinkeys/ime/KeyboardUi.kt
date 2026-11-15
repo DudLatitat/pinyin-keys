@@ -149,6 +149,11 @@ fun KeyboardUi(
     onClearClipHistory: () -> Unit,
     showPasteChip: Boolean,
     onPasteChip: () -> Unit,
+    pastePreview: String?,
+    suggestions: List<String>,
+    onSuggestion: (String) -> Unit,
+    toolsForced: Boolean,
+    onShowTools: () -> Unit,
     onEdit: (EditAction) -> Unit,
     onOpenSettings: () -> Unit,
 ) {
@@ -172,6 +177,15 @@ fun KeyboardUi(
                 if (composing.isNotEmpty()) CandidateBar(composing, candidates, onCandidate)
                 else if (panelShown == Panel.Emoji) EmojiHeader(emojiTab, { emojiTab = it }, close, onBackspace)
                 else if (panelShown == Panel.Clipboard && !sensitive) ClipboardHeader(close, onClearClipHistory)
+                // Like a standard keyboard, the bar changes with what you're doing: word
+                // suggestions while typing, a Paste button after a copy, otherwise the tools.
+                // (Translate results and Practice keep the tools so their buttons stay visible.)
+                else if (!toolsForced && !sensitive && assist is AssistState.Idle &&
+                    (mode == Mode.Assist || practice is PracticeState.Idle) && suggestions.isNotEmpty()
+                ) SuggestionBar(suggestions, onShowTools, onSuggestion)
+                else if (!toolsForced && !sensitive && showPasteChip && pastePreview != null &&
+                    assist is AssistState.Idle
+                ) PasteBar(pastePreview, onShowTools, onPasteChip)
                 else Toolbar(sensitive, mode, onMode, assist, onTranslate, onInsertChinese,
                     practice, onStartPractice, onHint, panelShown, togglePanel, onOpenSettings,
                     showPasteChip && !sensitive, onPasteChip)
@@ -688,5 +702,68 @@ private fun PracticePanel(state: PracticeState) {
                 }
             }
         }
+    }
+}
+
+/** "‹" button at the left of the ribbon: shows the tools instead. */
+@Composable
+private fun ToolsButton(onClick: () -> Unit) {
+    val kb = LocalKb.current
+    Box(
+        Modifier.size(width = 40.dp, height = 44.dp).clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) { Text("‹", fontSize = 26.sp, color = kb.label.copy(alpha = 0.8f)) }
+}
+
+/** Three word suggestions, best in the middle (like other keyboards). Tap to use one. */
+@Composable
+private fun SuggestionBar(words: List<String>, onTools: () -> Unit, onPick: (String) -> Unit) {
+    val kb = LocalKb.current
+    // Order on screen: 2nd, 1st (middle, bold), 3rd.
+    val shown = when (words.size) {
+        1 -> listOf(null, words[0], null)
+        2 -> listOf(words[1], words[0], null)
+        else -> listOf(words[1], words[0], words[2])
+    }
+    Row(Modifier.fillMaxWidth().height(44.dp).background(kb.toolbar), verticalAlignment = Alignment.CenterVertically) {
+        ToolsButton(onTools)
+        shown.forEachIndexed { i, w ->
+            if (i > 0) Box(Modifier.size(width = 1.dp, height = 20.dp).background(kb.label.copy(alpha = 0.2f)))
+            Box(
+                Modifier.weight(1f).height(44.dp).clickable(enabled = w != null) { w?.let(onPick) },
+                contentAlignment = Alignment.Center,
+            ) {
+                if (w != null) Text(
+                    w, fontSize = 17.sp, color = kb.label, maxLines = 1,
+                    fontWeight = if (i == 1) FontWeight.SemiBold else FontWeight.Normal,
+                )
+            }
+        }
+        Box(Modifier.width(40.dp))
+    }
+}
+
+/** After a copy: a Paste button with a preview of what was copied. */
+@Composable
+private fun PasteBar(preview: String, onTools: () -> Unit, onPaste: () -> Unit) {
+    val kb = LocalKb.current
+    Row(Modifier.fillMaxWidth().height(44.dp).background(kb.toolbar), verticalAlignment = Alignment.CenterVertically) {
+        ToolsButton(onTools)
+        Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
+            Row(
+                Modifier
+                    .height(34.dp)
+                    .clip(RoundedCornerShape(17.dp))
+                    .background(kb.key)
+                    .clickable(onClick = onPaste)
+                    .padding(horizontal = 14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("📋 ", fontSize = 14.sp)
+                Text(preview, fontSize = 14.sp, color = kb.label, maxLines = 1,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+            }
+        }
+        Box(Modifier.width(40.dp))
     }
 }
