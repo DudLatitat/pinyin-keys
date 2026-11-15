@@ -3,6 +3,11 @@ A personal Android keyboard that shows Chinese and pinyin for the English you ty
 **Install:** download `pinyin-keys-<version>.apk` below, open it on the phone, then turn on
 Pinyin Keys in the system keyboard settings. Add your Claude API key in the Pinyin Keys app.
 
+## New in 1.0.3
+- Smarter next-word suggestions that use the last two words of your sentence
+  ("how are" → you, "I'm going" → to), from a built-in table of common phrases.
+- Learns your own phrases as you type and puts them first. Stays on the phone.
+
 ## New in 1.0.2
 - Faster suggestions (worked out in the background, so typing never waits).
 - Contractions: "arent" suggests and corrects to "aren't", "dont" to "don't", etc.

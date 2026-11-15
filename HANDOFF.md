@@ -43,7 +43,9 @@
 - Ribbon: suggestions while typing / next-word after space / Paste chip with preview / tools
   (‹ shows tools). EnglishDictionary (assets/en_words.txt from AOSP LatinIME, Apache 2.0)
   gives completions + typo corrections (keyboard-neighbour edits); autocorrect on space
-  (setting, on by default; backspace undoes). NextWords learns word pairs on device.
+  (setting, on by default; backspace undoes). NextWords predicts from the last two words:
+  learned-on-device first, then assets/en_phrases.txt (Tatoeba, CC BY 2.0 FR, built by
+  tools/build_phrase_table.py), then common starters.
 - App icon: adaptive vector (white key with 中 on blue), with a monochrome layer.
 - Releases (owner: no prereleases): every signed CI build publishes a full release
   `v<versionName>` with RELEASE_NOTES.md, skipping if that version already exists. Bump

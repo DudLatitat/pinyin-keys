@@ -84,8 +84,13 @@ class PinyinKeysService : InputMethodService(),
     private var nextWords: NextWords? = null
     /** The word being typed (tracked here, so we don't ask the app on every key). */
     private var currentWord = ""
-    /** The last finished word, for next-word suggestions and learning. */
-    private var prevWord = ""
+    /** The last few finished words of this sentence, for next-word suggestions and learning. */
+    private val sentence = ArrayList<String>()
+
+    private fun addToSentence(word: String) {
+        sentence += word
+        if (sentence.size > 2) sentence.removeAt(0)  // only the last two matter
+    }
     /** Set right after an autocorrect, so an immediate backspace can undo it. */
     private var lastAutocorrect: Pair<String, String>? = null
     private val suggestions = mutableStateOf<List<String>>(emptyList())
@@ -296,8 +301,8 @@ class PinyinKeysService : InputMethodService(),
         suggestJob?.cancel()
         // Anything else ends the word: maybe autocorrect it, then learn it.
         finishWord(ic, autocorrectOnly = c != null && (c == ' ' || c in ".,?!"))
-        if (c != null && c in ".?!") prevWord = ""  // new sentence
-        suggestions.value = if (c == ' ' && suggestionsAllowed()) nextWords?.predict(prevWord) ?: emptyList() else emptyList()
+        if (c != null && c in ".?!") sentence.clear()  // new sentence
+        suggestions.value = if (c == ' ' && suggestionsAllowed()) nextWords?.predict(sentence) ?: emptyList() else emptyList()
 
         // English: two spaces after a word become ". " (like other keyboards).
         if (text == " ") {
@@ -413,7 +418,7 @@ class PinyinKeysService : InputMethodService(),
 
     private fun resetWord() {
         currentWord = ""
-        prevWord = ""
+        sentence.clear()
         lastAutocorrect = null
         suggestions.value = emptyList()
         toolsForced.value = false
@@ -437,8 +442,8 @@ class PinyinKeysService : InputMethodService(),
                 final = fix
             }
         }
-        nextWords?.learn(prevWord, final)
-        prevWord = final
+        nextWords?.learn(sentence, final)
+        addToSentence(final)
     }
 
     /** A suggestion tapped: replace the word being typed (or add the next word) + space. */
@@ -449,10 +454,10 @@ class PinyinKeysService : InputMethodService(),
         ic.commitText("$word ", 1)
         currentWord = ""
         lastAutocorrect = null
-        nextWords?.learn(prevWord, word)
-        prevWord = word
+        nextWords?.learn(sentence, word)
+        addToSentence(word)
         if (shift.value == Shift.On) shift.value = Shift.Off
-        suggestions.value = nextWords?.predict(word) ?: emptyList()
+        suggestions.value = nextWords?.predict(sentence) ?: emptyList()
         updateAutoCaps()
     }
 
@@ -758,7 +763,7 @@ class PinyinKeysService : InputMethodService(),
         clearAssist()
         practiceState.value = PracticeState.Idle
         currentInputConnection?.let { finishWord(it, autocorrectOnly = false) }
-        prevWord = ""
+        sentence.clear()
         suggestions.value = emptyList()
         val ic = currentInputConnection ?: return
         val info = currentInputEditorInfo

@@ -3,42 +3,68 @@ package com.pinyinkeys.ime
 import android.content.Context
 
 /**
- * Learns which word you usually type after another (e.g. "see" -> "you"), to suggest
- * the next word after a space. Kept only on this phone, in the app's private, encrypted
- * settings; never learned in password or "incognito" fields.
+ * Next-word prediction from the sentence so far, using the last one or two words:
+ *  1. what YOU usually type after them (learned on this phone), then
+ *  2. common English phrases (assets/en_phrases.txt, from Tatoeba, CC BY 2.0 FR),
+ *  3. then very common starters.
+ * "^" stands for the start of a sentence. What you type is learned only on this phone,
+ * in the app's encrypted settings, and never in password/email/web-address fields.
  */
 class NextWords(private val context: Context) {
-    // previous word -> (next word -> count)
-    private val counts = HashMap<String, HashMap<String, Int>>()
+    // context ("w1" or "w1 w2", lowercase) -> (next word -> count), learned from you
+    private val learned = HashMap<String, HashMap<String, Int>>()
+    // context -> up to 3 common next words, from the bundled phrase table
+    private val phrases = HashMap<String, List<String>>(60_000)
     private var dirty = false
 
     fun load() {
-        counts.clear()
+        learned.clear()
         Settings(context).nextWordData.split('\n').forEach { line ->
             val parts = line.split('\t')
-            if (parts.size == 3) counts.getOrPut(parts[0]) { HashMap() }[parts[1]] = parts[2].toIntOrNull() ?: 1
+            if (parts.size == 3) learned.getOrPut(parts[0]) { HashMap() }[parts[1]] = parts[2].toIntOrNull() ?: 1
+        }
+        context.assets.open("en_phrases.txt").bufferedReader().useLines { lines ->
+            lines.forEach { line ->
+                val t = line.indexOf('\t')
+                if (t > 0) phrases[line.substring(0, t)] = line.substring(t + 1).split(' ')
+            }
         }
     }
 
-    fun learn(prev: String, next: String) {
-        if (prev.isEmpty() || next.isEmpty()) return
-        val m = counts.getOrPut(prev.lowercase()) { HashMap() }
-        m[next] = (m[next] ?: 0) + 1
+    /** [before] = the words before [next] in this sentence (empty at the start). */
+    fun learn(before: List<String>, next: String) {
+        if (next.isEmpty()) return
+        for (ctx in contexts(before)) {
+            val m = learned.getOrPut(ctx) { HashMap() }
+            m[next] = (m[next] ?: 0) + 1
+        }
         dirty = true
     }
 
-    /** Most likely next words after [prev]; common starters when nothing's learned yet. */
-    fun predict(prev: String, n: Int = 3): List<String> {
-        val learned = counts[prev.lowercase()]?.entries?.sortedByDescending { it.value }?.map { it.key } ?: emptyList()
-        return (learned + DEFAULTS).distinct().take(n)
+    /** Most likely next words after [before] (the sentence so far), best first. */
+    fun predict(before: List<String>, n: Int = 3): List<String> {
+        val out = LinkedHashSet<String>()
+        val ctx = contexts(before)  // two-word context first, then one-word
+        // Your own habits first (two-word context beats one-word), then common phrases.
+        for (c in ctx) learned[c]?.entries?.sortedByDescending { it.value }?.forEach { out += it.key }
+        for (c in ctx) phrases[c]?.let { out += it }
+        out += DEFAULTS
+        return out.take(n)
     }
 
-    /** Saves at most a few thousand pairs, keeping the most used. */
+    /** "w1 w2" and "w2" for the last two words ("^" = start of sentence). */
+    private fun contexts(before: List<String>): List<String> {
+        val words = listOf("^") + before.map { it.lowercase() }
+        val last = words.last()
+        return if (words.size >= 2) listOf(words[words.size - 2] + " " + last, last) else listOf(last)
+    }
+
+    /** Saves the most-used learned pairs (a few thousand at most). */
     fun save() {
         if (!dirty) return
         dirty = false
-        val lines = counts.flatMap { (p, m) -> m.map { (n, c) -> Triple(p, n, c) } }
-            .sortedByDescending { it.third }.take(5000)
+        val lines = learned.flatMap { (p, m) -> m.map { (n, c) -> Triple(p, n, c) } }
+            .sortedByDescending { it.third }.take(8000)
             .joinToString("\n") { "${it.first}\t${it.second}\t${it.third}" }
         Settings(context).nextWordData = lines
     }
