@@ -33,6 +33,11 @@ class Settings(context: Context) {
         get() = prefs.getString("model", null) ?: ClaudeTranslationService.DEFAULT_MODEL
         set(v) = prefs.edit().putString("model", v.trim().ifEmpty { ClaudeTranslationService.DEFAULT_MODEL }).apply()
 
+    /** Practice mode: require the tone number (e.g. "ni3"). Off by default. */
+    var strictTones: Boolean
+        get() = prefs.getBoolean("strict_tones", false)
+        set(v) = prefs.edit().putBoolean("strict_tones", v).apply()
+
     /** Null when no API key is set yet. */
     fun translationService(): TranslationService? =
         apiKey.takeIf { it.isNotEmpty() }?.let { ClaudeTranslationService(it, baseUrl, model) }

@@ -58,6 +58,10 @@ class PinyinKeysService : InputMethodService(),
     private val assistState = mutableStateOf<AssistState>(AssistState.Idle)
     private var translateJob: Job? = null
 
+    private val mode = mutableStateOf(Mode.Assist)
+    private val practiceState = mutableStateOf<PracticeState>(PracticeState.Idle)
+    private var strictTones = false
+
     /** Per-card breakdown and "Why?"; state maps so Compose redraws each card on change. */
     private val detailsStates = mutableStateMapOf<Sentence, Load<SentenceDetails>>()
     private val whyStates = mutableStateMapOf<Sentence, Load<String>>()
@@ -82,6 +86,11 @@ class PinyinKeysService : InputMethodService(),
                 KeyboardUi(
                     sensitive = sensitiveField.value,
                     assist = assistState.value,
+                    mode = mode.value,
+                    onMode = ::setMode,
+                    practice = practiceState.value,
+                    onStartPractice = ::startPractice,
+                    onHint = ::showHint,
                     onTranslate = ::translateField,
                     onInsertChinese = ::insertChinese,
                     detailsStates = detailsStates,
@@ -106,6 +115,7 @@ class PinyinKeysService : InputMethodService(),
             translateJob?.cancel()
             assistState.value = AssistState.Idle
             detailsStates.clear(); whyStates.clear()
+            practiceState.value = PracticeState.Idle
         }
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_RESUME)
     }
@@ -135,11 +145,18 @@ class PinyinKeysService : InputMethodService(),
     }
 
     private fun typeText(text: String) {
+        if (practiceTyped(text)) return
         clearAssist()
         currentInputConnection?.commitText(text, 1)
     }
 
     private fun backspace() {
+        val p = practiceState.value
+        if (mode.value == Mode.Practice && p is PracticeState.Active && !p.done) {
+            // Only edits the pinyin being typed; committed characters stay put.
+            practiceState.value = p.copy(buffer = p.buffer.dropLast(1))
+            return
+        }
         clearAssist()
         val ic = currentInputConnection ?: return
         // If text is selected, delete the selection; otherwise delete one character.
@@ -149,6 +166,7 @@ class PinyinKeysService : InputMethodService(),
 
     private fun enter() {
         clearAssist()
+        practiceState.value = PracticeState.Idle
         val ic = currentInputConnection ?: return
         val info = currentInputEditorInfo
         // Many chat apps set an "action" (Send, Go, ...) on their field. If there is one,
@@ -257,19 +275,110 @@ class PinyinKeysService : InputMethodService(),
         Load.Error(fallbackError)
     }
 
-    /** Replaces everything in the text field with the Chinese. */
-    private fun insertChinese() {
-        val result = (assistState.value as? AssistState.Result)?.result ?: return
+    // --- Practice mode ---
+
+    private fun setMode(m: Mode) {
+        mode.value = m
+        clearAssist()
+        practiceState.value = PracticeState.Idle
+    }
+
+    /** Translate the field, load every sentence's syllables, clear the English, start. */
+    private fun startPractice() {
+        if (sensitiveField.value) return
+        // Restart: the field now holds Chinese, so replay the same sentences from the top.
+        (practiceState.value as? PracticeState.Active)?.let { p ->
+            replaceField("")
+            practiceState.value = commitAutoUnits(PracticeState.Active(p.sentences, p.units))
+            return
+        }
+        val text = readFieldText().trim()
+        if (text.isEmpty()) {
+            practiceState.value = PracticeState.Error("Type the English first.")
+            return
+        }
+        translateJob?.cancel()
+        practiceState.value = PracticeState.Loading
+        translateJob = lifecycleScope.launch {
+            val result = onDemand("Couldn't start practice. Try again.") { cache, service ->
+                strictTones = Settings(this@PinyinKeysService).strictTones
+                val svc = service()
+                val sentences = svc.translate(text).sentences
+                val units = sentences.map { s ->
+                    val d = cache.getDetails(s) ?: svc.details(s).also { cache.putDetails(s, it) }
+                    Practice.buildUnits(s, d)
+                        ?: throw TranslationException("Couldn't line up the pinyin. Try again.")
+                }
+                PracticeState.Active(sentences, units)
+            }
+            practiceState.value = when (result) {
+                is Load.Loaded -> {
+                    replaceField("")
+                    commitAutoUnits(result.value)
+                }
+                is Load.Error -> PracticeState.Error(result.message)
+                Load.Loading -> PracticeState.Loading
+            }
+        }
+    }
+
+    /** Handles a typed key in Practice. Returns true if Practice used it. */
+    private fun practiceTyped(text: String): Boolean {
+        val p = practiceState.value
+        if (mode.value != Mode.Practice || p !is PracticeState.Active || p.done) return false
+        val c = text.singleOrNull() ?: return true
+        if (!c.isLetterOrDigit()) return true  // ignore space/punctuation: it's filled in for you
+        val target = p.current?.syllable ?: return true
+        val buffer = p.buffer + c.lowercaseChar()
+        practiceState.value = if (Practice.matches(buffer, target, strictTones)) {
+            currentInputConnection?.commitText(p.current!!.text, 1)
+            commitAutoUnits(p.copy(unitIndex = p.unitIndex + 1, buffer = "", hintShown = false))
+        } else {
+            p.copy(buffer = buffer)
+        }
+        return true
+    }
+
+    /** Commits punctuation automatically and moves to the next sentence when one is finished. */
+    private fun commitAutoUnits(start: PracticeState.Active): PracticeState.Active {
+        var p = start
+        while (true) {
+            val cur = p.current
+            if (cur == null) {
+                if (p.sentenceIndex + 1 < p.units.size) {
+                    p = p.copy(sentenceIndex = p.sentenceIndex + 1, unitIndex = 0)
+                    continue
+                }
+                return p  // all done
+            }
+            if (cur.syllable != null) return p
+            currentInputConnection?.commitText(cur.text, 1)
+            p = p.copy(unitIndex = p.unitIndex + 1)
+        }
+    }
+
+    private fun showHint() {
+        val p = practiceState.value as? PracticeState.Active ?: return
+        practiceState.value = p.copy(hintShown = true)
+    }
+
+    /** Replaces everything in the text field with [text]. */
+    private fun replaceField(text: String) {
         val ic = currentInputConnection ?: return
-        val hanzi = result.sentences.joinToString("") { it.hanzi }
         // Batch edit: the app sees one change instead of several flickering ones.
         ic.beginBatchEdit()
         val before = ic.getTextBeforeCursor(MAX_FIELD_CHARS, 0)?.length ?: 0
         val after = ic.getTextAfterCursor(MAX_FIELD_CHARS, 0)?.length ?: 0
         if (!ic.getSelectedText(0).isNullOrEmpty()) ic.commitText("", 1)
         ic.deleteSurroundingText(before, after)
-        ic.commitText(hanzi, 1)
+        if (text.isNotEmpty()) ic.commitText(text, 1)
         ic.endBatchEdit()
+    }
+
+    /** Replaces everything in the text field with the Chinese. */
+    private fun insertChinese() {
+        val result = (assistState.value as? AssistState.Result)?.result ?: return
+        replaceField(result.sentences.joinToString("") { it.hanzi })
         assistState.value = AssistState.Idle
     }
 

@@ -21,6 +21,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.Switch
+import androidx.compose.foundation.layout.Row
+import androidx.compose.ui.Alignment
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -103,6 +106,13 @@ class SetupActivity : ComponentActivity() {
                             saved = true
                         }) { Text("Save") }
                         if (saved) Text("Saved.")
+                        HorizontalDivider()
+                        Text("Practice", style = MaterialTheme.typography.titleMedium)
+                        var strict by remember { mutableStateOf(settings.strictTones) }
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("Require tone numbers (e.g. ni3)", Modifier.weight(1f))
+                            Switch(checked = strict, onCheckedChange = { strict = it; settings.strictTones = it })
+                        }
                         Text(
                             "Your text is sent to the translation API only when you tap Translate.",
                             style = MaterialTheme.typography.bodySmall,

@@ -33,6 +33,7 @@ import com.pinyinkeys.ime.translate.SentenceDetails
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.FilterChip
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -57,6 +58,11 @@ private val SYMBOL_ROWS = listOf("1234567890", "@#\$%&-+()/", "*\"':;!?")
 @Composable
 fun KeyboardUi(
     sensitive: Boolean,
+    mode: Mode,
+    onMode: (Mode) -> Unit,
+    practice: PracticeState,
+    onStartPractice: () -> Unit,
+    onHint: () -> Unit,
     assist: AssistState,
     onTranslate: () -> Unit,
     onInsertChinese: () -> Unit,
@@ -81,7 +87,13 @@ fun KeyboardUi(
                     Modifier.widthIn(max = 720.dp).fillMaxWidth().padding(4.dp),
                     verticalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
-                    if (!sensitive) AssistPanel(assist, onTranslate, onInsertChinese, detailsStates, onExpand, whyStates, onWhy)
+                    if (!sensitive) {
+                        ModeToggle(mode, onMode)
+                        when (mode) {
+                            Mode.Assist -> AssistPanel(assist, onTranslate, onInsertChinese, detailsStates, onExpand, whyStates, onWhy)
+                            Mode.Practice -> PracticePanel(practice, onStartPractice, onHint)
+                        }
+                    }
                     val rows = if (symbols) SYMBOL_ROWS else LETTER_ROWS
                     rows.forEachIndexed { i, row ->
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -245,5 +257,72 @@ private fun ErrorRow(message: String, onRetry: () -> Unit) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         Text(message, fontSize = 13.sp, color = MaterialTheme.colorScheme.error, modifier = Modifier.weight(1f))
         TextButton(onClick = onRetry) { Text("Retry") }
+    }
+}
+
+/** Assist / Practice switch at the top of the panel. */
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@Composable
+private fun ModeToggle(mode: Mode, onMode: (Mode) -> Unit) {
+    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        Mode.entries.forEach { m ->
+            FilterChip(selected = mode == m, onClick = { onMode(m) }, label = { Text(m.name) })
+        }
+    }
+}
+
+/** Practice: the Chinese stays hidden; type each syllable in pinyin to earn the character. */
+@Composable
+private fun PracticePanel(state: PracticeState, onStart: () -> Unit, onHint: () -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            FilledTonalButton(onClick = onStart, enabled = state !is PracticeState.Loading) {
+                Text(if (state is PracticeState.Active) "Restart" else "Translate")
+            }
+            Spacer(Modifier.width(8.dp))
+            when (state) {
+                PracticeState.Loading -> CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                is PracticeState.Error -> Text(state.message, color = MaterialTheme.colorScheme.error, fontSize = 14.sp)
+                PracticeState.Idle -> Text("Type English, then Translate.", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                is PracticeState.Active -> if (!state.done) {
+                    Box(Modifier.weight(1f), contentAlignment = Alignment.CenterEnd) {
+                        TextButton(onClick = onHint) { Text("Hint") }
+                    }
+                }
+            }
+        }
+        if (state is PracticeState.Active) {
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(MaterialTheme.colorScheme.surface)
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                if (state.done) {
+                    Text("Done! Check it, then send. 🎉", fontSize = 18.sp, color = MaterialTheme.colorScheme.onSurface)
+                } else {
+                    val n = state.units.size
+                    Text(
+                        "Sentence ${state.sentenceIndex + 1}/$n · ${state.doneInSentence}/${state.totalInSentence}",
+                        fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Text(state.sentences[state.sentenceIndex].en, fontSize = 16.sp, color = MaterialTheme.colorScheme.onSurface)
+                    val target = state.current?.syllable.orEmpty()
+                    val next = if (state.hintShown) Practice.toToneMarks(target) else "?"
+                    Text("Next: $next", fontSize = 15.sp, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Medium)
+                    if (state.buffer.isNotEmpty()) {
+                        // Red once what's typed can't become the right syllable.
+                        val ok = Practice.isPrefix(state.buffer, target, strictTones = true) ||
+                            Practice.isPrefix(state.buffer, target, strictTones = false)
+                        Text(
+                            state.buffer, fontSize = 20.sp,
+                            color = if (ok) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.error,
+                        )
+                    }
+                }
+            }
+        }
     }
 }
