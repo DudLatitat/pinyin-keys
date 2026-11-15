@@ -58,6 +58,11 @@ class PinyinKeysService : InputMethodService(),
     /** True in password / "incognito" fields. Later milestones hide all translation UI then. */
     private val sensitiveField = mutableStateOf(false)
 
+    /** Number pad layout for number/phone/date fields, or null for the normal keyboard. */
+    private val numberPad = mutableStateOf<NumberPadKind?>(null)
+    /** Label for the enter key, from what the app asks for (Done, Next, Go, Send...). */
+    private val enterLabel = mutableStateOf<String?>(null)
+
     /** What the Assist panel shows. Compose redraws whenever this changes. */
     private val assistState = mutableStateOf<AssistState>(AssistState.Idle)
     private var translateJob: Job? = null
@@ -190,6 +195,8 @@ class PinyinKeysService : InputMethodService(),
                     onPasteChip = ::pasteFromChip,
                     onEdit = ::edit,
                     onOpenSettings = ::openSettings,
+                    numberPad = numberPad.value,
+                    enterLabel = enterLabel.value,
                 )
             }
         }
@@ -199,6 +206,8 @@ class PinyinKeysService : InputMethodService(),
     override fun onStartInputView(info: EditorInfo?, restarting: Boolean) {
         super.onStartInputView(info, restarting)
         sensitiveField.value = info != null && isSensitive(info)
+        numberPad.value = info?.let { NumberPadKind.forInputType(it.inputType) }
+        enterLabel.value = info?.let { enterLabelFor(it) }
         // New text field: forget the previous translation.
         if (!restarting) {
             translateJob?.cancel()
@@ -1061,6 +1070,20 @@ class PinyinKeysService : InputMethodService(),
         val result = state.result
         replaceField(result.sentences.joinToString("") { it.hanzi })
         assistState.value = AssistState.Idle
+    }
+
+    /** The action the app shows on its enter key ("Done", "Next"...), if any. */
+    private fun enterLabelFor(info: EditorInfo): String? {
+        if (info.imeOptions and EditorInfo.IME_FLAG_NO_ENTER_ACTION != 0) return null
+        return when (info.imeOptions and EditorInfo.IME_MASK_ACTION) {
+            EditorInfo.IME_ACTION_DONE -> "Done"
+            EditorInfo.IME_ACTION_NEXT -> "Next"
+            EditorInfo.IME_ACTION_GO -> "Go"
+            EditorInfo.IME_ACTION_SEND -> "Send"
+            EditorInfo.IME_ACTION_SEARCH -> "Search"
+            EditorInfo.IME_ACTION_PREVIOUS -> "Back"
+            else -> null
+        }
     }
 
     private fun isSensitive(info: EditorInfo): Boolean {

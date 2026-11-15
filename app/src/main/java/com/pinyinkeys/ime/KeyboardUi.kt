@@ -156,6 +156,8 @@ fun KeyboardUi(
     onShowTools: () -> Unit,
     onEdit: (EditAction) -> Unit,
     onOpenSettings: () -> Unit,
+    numberPad: NumberPadKind?,
+    enterLabel: String?,
 ) {
     // Which panel shows instead of the letter keys (emoji, clipboard, editing).
     var panelShown by remember { mutableStateOf(Panel.Keys) }
@@ -187,7 +189,7 @@ fun KeyboardUi(
                 else if (!toolsForced && !sensitive && assist is AssistState.Idle &&
                     (mode == Mode.Assist || practice is PracticeState.Idle) && suggestions.isNotEmpty()
                 ) SuggestionBar(suggestions, onShowTools, onSuggestion)
-                else Toolbar(sensitive, mode, onMode, assist, onTranslate, onInsertChinese,
+                else Toolbar(sensitive || numberPad != null, mode, onMode, assist, onTranslate, onInsertChinese,
                     practice, onStartPractice, onHint, panelShown, togglePanel, onOpenSettings,
                     showPasteChip && !sensitive, onPasteChip)
             }
@@ -200,7 +202,9 @@ fun KeyboardUi(
             val keys: @Composable () -> Unit = {
                 val close = { panelShown = Panel.Keys }
                 when (panelShown) {
-                    Panel.Keys -> Keys(page, { page = it }, shift, onShift, chinese, onToggleChinese, onText, onBackspace, onEnter, onSwitchKeyboard)
+                    Panel.Keys -> if (numberPad != null)
+                        NumberPad(numberPad, enterLabel, onText, onBackspace, onEnter)
+                    else Keys(page, { page = it }, shift, onShift, chinese, onToggleChinese, onText, onBackspace, onEnter, onSwitchKeyboard)
                     Panel.Emoji -> EmojiGrid(emojiTab, recentEmoji, onEmoji)
                     // No clipboard or editing panel in password fields.
                     Panel.Clipboard -> if (sensitive) Keys(page, { page = it }, shift, onShift, chinese, onToggleChinese, onText, onBackspace, onEnter, onSwitchKeyboard)
@@ -463,7 +467,7 @@ private val KEY_SHAPE = RoundedCornerShape(6.dp)
  * are drawn darker. Every press gives a light tap vibration, like other keyboards.
  */
 @Composable
-private fun RowScope.Key(
+internal fun RowScope.Key(
     label: String,
     weight: Float = 1f,
     preview: Boolean = false,
