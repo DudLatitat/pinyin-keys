@@ -11,3 +11,7 @@
     kotlinx.serialization.KSerializer serializer(...);
 }
 -keep class com.pinyinkeys.ime.translate.** { *; }
+
+# Tink (used by EncryptedSharedPreferences) references compile-time-only annotations.
+-dontwarn com.google.errorprone.annotations.**
+-dontwarn javax.annotation.**
