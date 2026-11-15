@@ -62,6 +62,14 @@ class PinyinKeysService : InputMethodService(),
     private var translateJob: Job? = null
 
     private val mode = mutableStateOf(Mode.Assist)
+
+    // Typing state.
+    private val shift = mutableStateOf(Shift.Off)
+    /** Chinese mode: letters build pinyin, and the candidate bar suggests characters. */
+    private val chinese = mutableStateOf(false)
+    private val composing = mutableStateOf("")
+    private val candidates = mutableStateOf<List<Candidate>>(emptyList())
+    private var dictionary: PinyinDictionary? = null
     private val practiceState = mutableStateOf<PracticeState>(PracticeState.Idle)
     private var strictTones = false
 
@@ -108,6 +116,14 @@ class PinyinKeysService : InputMethodService(),
                     onBackspace = ::backspace,
                     onEnter = ::enter,
                     onSwitchKeyboard = { switchToPreviousInputMethod() },
+                    shift = shift.value,
+                    onShift = ::cycleShift,
+                    // Never Chinese/suggestions in password fields: plain keyboard only.
+                    chinese = chinese.value && !sensitiveField.value,
+                    onToggleChinese = ::toggleChinese,
+                    composing = composing.value,
+                    candidates = candidates.value,
+                    onCandidate = ::pickCandidate,
                 )
             }
         }
@@ -124,11 +140,17 @@ class PinyinKeysService : InputMethodService(),
             detailsStates.clear(); whyStates.clear(); savedStates.clear()
             practiceState.value = PracticeState.Idle
         }
+        setComposing("")
+        shift.value = Shift.Off
+        updateAutoCaps()
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_RESUME)
     }
 
     override fun onFinishInputView(finishingInput: Boolean) {
         super.onFinishInputView(finishingInput)
+        // Keyboard hidden: keep the typed letters as they are (they're already in the field).
+        currentInputConnection?.finishComposingText()
+        setComposing("")
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_PAUSE)
     }
 
@@ -154,7 +176,38 @@ class PinyinKeysService : InputMethodService(),
     private fun typeText(text: String) {
         if (practiceTyped(text)) return
         clearAssist()
-        currentInputConnection?.commitText(text, 1)
+        val ic = currentInputConnection ?: return
+        val isChinese = chinese.value && !sensitiveField.value
+
+        if (isChinese) {
+            val c = text.singleOrNull()
+            // Lowercase letters build pinyin. (Capitals go straight in, e.g. for names.)
+            if (c != null && c in 'a'..'z') {
+                setComposing(composing.value + c)
+                return
+            }
+            // Anything else: first commit the best suggestion for what's been typed.
+            if (composing.value.isNotEmpty()) {
+                if (text == " ") { commitFirstCandidate(); return }
+                commitFirstCandidate()
+            }
+            ic.commitText(CHINESE_PUNCTUATION[text] ?: text, 1)
+            return
+        }
+
+        // English: two spaces after a word become ". " (like other keyboards).
+        if (text == " ") {
+            val before = ic.getTextBeforeCursor(2, 0)
+            if (before != null && before.length == 2 && before[1] == ' ' && before[0].isLetterOrDigit()) {
+                ic.deleteSurroundingText(1, 0)
+                ic.commitText(". ", 1)
+                updateAutoCaps()
+                return
+            }
+        }
+        ic.commitText(text, 1)
+        if (shift.value == Shift.On) shift.value = Shift.Off
+        updateAutoCaps()
     }
 
     private fun backspace() {
@@ -164,14 +217,99 @@ class PinyinKeysService : InputMethodService(),
             practiceState.value = p.copy(buffer = p.buffer.dropLast(1))
             return
         }
+        if (composing.value.isNotEmpty()) {
+            setComposing(composing.value.dropLast(1))
+            return
+        }
         clearAssist()
         val ic = currentInputConnection ?: return
         // If text is selected, delete the selection; otherwise delete one character.
         val selected = ic.getSelectedText(0)
         if (!selected.isNullOrEmpty()) ic.commitText("", 1) else ic.deleteSurroundingText(1, 0)
+        updateAutoCaps()
+    }
+
+    // --- Shift and Chinese mode ---
+
+    /** Shift key: off -> one capital -> caps lock -> off. */
+    private fun cycleShift() {
+        shift.value = when (shift.value) { Shift.Off -> Shift.On; Shift.On -> Shift.Lock; Shift.Lock -> Shift.Off }
+    }
+
+    /**
+     * Capitalize automatically at the start of a sentence. The app decides whether its
+     * field wants this (getCursorCapsMode returns 0 for fields like emails or URLs).
+     */
+    private fun updateAutoCaps() {
+        if (shift.value == Shift.Lock || chinese.value) return
+        val ic = currentInputConnection ?: return
+        val type = currentInputEditorInfo?.inputType ?: return
+        shift.value = if (ic.getCursorCapsMode(type) != 0) Shift.On else Shift.Off
+    }
+
+    private fun toggleChinese() {
+        if (composing.value.isNotEmpty()) {
+            // Keep what was typed as plain letters.
+            currentInputConnection?.finishComposingText()
+            setComposing("")
+        }
+        chinese.value = !chinese.value
+        shift.value = Shift.Off
+        if (chinese.value && dictionary == null) {
+            // Load the dictionary in the background the first time Chinese mode is used.
+            lifecycleScope.launch {
+                dictionary = withContext(Dispatchers.IO) { PinyinDictionary.get(this@PinyinKeysService) }
+                setComposing(composing.value)  // refresh suggestions if letters were typed meanwhile
+            }
+        } else {
+            updateAutoCaps()
+        }
+    }
+
+    /**
+     * Shows the typed pinyin underlined in the app's text field ("composing text",
+     * the standard way keyboards show unfinished input) and updates suggestions.
+     */
+    private fun setComposing(letters: String) {
+        composing.value = letters
+        candidates.value = dictionary?.candidates(letters) ?: emptyList()
+        val ic = currentInputConnection ?: return
+        if (letters.isEmpty()) ic.commitText("", 1) else ic.setComposingText(letters, 1)
+    }
+
+    /** Suggestion tapped: put it in, and keep any letters it didn't use for the next pick. */
+    private fun pickCandidate(c: Candidate) {
+        val rest = composing.value.drop(c.consumed)
+        val ic = currentInputConnection ?: return
+        ic.commitText(c.word, 1)  // replaces the underlined pinyin
+        composing.value = ""
+        setComposing(rest)
+    }
+
+    /** Space or punctuation while typing pinyin: take the top suggestion (or the letters). */
+    private fun commitFirstCandidate() {
+        while (composing.value.isNotEmpty()) {
+            val first = candidates.value.firstOrNull()
+            if (first == null) {
+                currentInputConnection?.commitText(composing.value, 1)
+                composing.value = ""
+                candidates.value = emptyList()
+                return
+            }
+            pickCandidate(first)
+            // Space commits one pick; if letters remain, leave them for the user to choose.
+            return
+        }
     }
 
     private fun enter() {
+        // Enter while typing pinyin: keep the letters as they are, don't send yet.
+        if (composing.value.isNotEmpty()) {
+            currentInputConnection?.finishComposingText()
+            composing.value = ""
+            candidates.value = emptyList()
+            return
+        }
         clearAssist()
         practiceState.value = PracticeState.Idle
         val ic = currentInputConnection ?: return
@@ -433,5 +571,10 @@ class PinyinKeysService : InputMethodService(),
     companion object {
         private const val TAG = "PinyinKeys"
         private const val MAX_FIELD_CHARS = 10_000
+        /** In Chinese mode these keys type the full-width Chinese punctuation instead. */
+        private val CHINESE_PUNCTUATION = mapOf(
+            "," to "，", "." to "。", "?" to "？", "!" to "！", ":" to "：", ";" to "；",
+            "(" to "（", ")" to "）",
+        )
     }
 }

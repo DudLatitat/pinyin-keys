@@ -34,6 +34,19 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.FilterChip
+import android.view.HapticFeedbackConstants
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.zIndex
+import kotlinx.coroutines.delay
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -45,8 +58,12 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
+private val NUMBER_ROW = "1234567890"
 private val LETTER_ROWS = listOf("qwertyuiop", "asdfghjkl", "zxcvbnm")
-private val SYMBOL_ROWS = listOf("1234567890", "@#\$%&-+()/", "*\"':;!?")
+private val SYMBOL_ROWS = listOf("@#\$%&-+()/", "*\"':;!?_", "=[]{}<>~")
+
+/** Shift key: off, one capital letter, or caps lock (tap cycles through them). */
+enum class Shift { Off, On, Lock }
 
 /**
  * The QWERTY keyboard. Pure UI: every key just calls one of the callbacks,
@@ -76,52 +93,48 @@ fun KeyboardUi(
     onBackspace: () -> Unit,
     onEnter: () -> Unit,
     onSwitchKeyboard: () -> Unit,
+    shift: Shift,
+    onShift: () -> Unit,
+    chinese: Boolean,
+    onToggleChinese: () -> Unit,
+    composing: String,
+    candidates: List<Candidate>,
+    onCandidate: (Candidate) -> Unit,
 ) {
-    var shift by remember { mutableStateOf(false) }
     var symbols by remember { mutableStateOf(false) }
     val colors = if (isSystemInDarkTheme()) darkColorScheme() else lightColorScheme()
 
     MaterialTheme(colorScheme = colors) {
         Surface(color = MaterialTheme.colorScheme.surfaceVariant) {
-            // On the wide inner screen of a foldable, cap the width so keys don't get huge.
-            Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                Column(
-                    Modifier.widthIn(max = 720.dp).fillMaxWidth().padding(4.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp),
-                ) {
-                    if (!sensitive) {
-                        ModeToggle(mode, onMode)
-                        when (mode) {
-                            Mode.Assist -> AssistPanel(assist, onTranslate, onInsertChinese, detailsStates, onExpand, whyStates, onWhy, savedStates, onSave)
-                            Mode.Practice -> PracticePanel(practice, onStartPractice, onHint)
-                        }
+            val panel: @Composable () -> Unit = {
+                if (!sensitive) {
+                    ModeToggle(mode, onMode)
+                    when (mode) {
+                        Mode.Assist -> AssistPanel(assist, onTranslate, onInsertChinese, detailsStates, onExpand, whyStates, onWhy, savedStates, onSave)
+                        Mode.Practice -> PracticePanel(practice, onStartPractice, onHint)
                     }
-                    val rows = if (symbols) SYMBOL_ROWS else LETTER_ROWS
-                    rows.forEachIndexed { i, row ->
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                            if (i == 2) {
-                                if (symbols) Spacer1(1.5f)
-                                else Key(if (shift) "⇧" else "⇪", 1.5f) { shift = !shift }
-                            }
-                            if (i == 1) Spacer1(0.5f)
-                            row.forEach { c ->
-                                val label = if (shift && !symbols) c.uppercase() else c.toString()
-                                Key(label) {
-                                    onText(label)
-                                    shift = false
-                                }
-                            }
-                            if (i == 1) Spacer1(0.5f)
-                            if (i == 2) Key("⌫", 1.5f, onClick = onBackspace)
-                        }
+                }
+            }
+            val keys: @Composable () -> Unit = {
+                if (composing.isNotEmpty()) CandidateBar(composing, candidates, onCandidate)
+                Keys(symbols, { symbols = !symbols }, shift, onShift, chinese, onToggleChinese,
+                    onText, onBackspace, onEnter, onSwitchKeyboard)
+            }
+            // BoxWithConstraints tells us how wide the keyboard window is.
+            BoxWithConstraints(Modifier.fillMaxWidth()) {
+                if (maxWidth >= 600.dp && !sensitive) {
+                    // Wide screen (foldable's inner screen): cards on the left, keys on the right.
+                    Row(Modifier.fillMaxWidth().padding(4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) { panel() }
+                        Column(Modifier.width(minOf(maxWidth * 0.55f, 560.dp)), verticalArrangement = Arrangement.spacedBy(6.dp)) { keys() }
                     }
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Key(if (symbols) "ABC" else "?123", 1.5f) { symbols = !symbols }
-                        Key("🌐", 1f, onClick = onSwitchKeyboard)
-                        Key(",", 1f) { onText(",") }
-                        Key("space", 4f) { onText(" ") }
-                        Key(".", 1f) { onText(".") }
-                        Key("⏎", 1.5f, onClick = onEnter)
+                } else {
+                    Column(
+                        Modifier.align(Alignment.Center).widthIn(max = 720.dp).fillMaxWidth().padding(4.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        panel()
+                        keys()
                     }
                 }
             }
@@ -129,18 +142,142 @@ fun KeyboardUi(
     }
 }
 
+/** Suggestions for the pinyin being typed. Tap one to put it in the message. */
 @Composable
-private fun RowScope.Key(label: String, weight: Float = 1f, onClick: () -> Unit) {
-    Box(
-        Modifier
-            .weight(weight)
-            .height(46.dp)
-            .clip(RoundedCornerShape(6.dp))
-            .background(MaterialTheme.colorScheme.surface)
-            .clickable(onClick = onClick),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(label, fontSize = 18.sp, color = MaterialTheme.colorScheme.onSurface)
+private fun CandidateBar(composing: String, candidates: List<Candidate>, onPick: (Candidate) -> Unit) {
+    Row(Modifier.fillMaxWidth().height(44.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(composing, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(horizontal = 6.dp))
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+            itemsIndexed(candidates) { i, c ->
+                Box(
+                    Modifier
+                        .height(40.dp)
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(if (i == 0) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceVariant)
+                        .clickable { onPick(c) }
+                        .padding(horizontal = 10.dp),
+                    contentAlignment = Alignment.Center,
+                ) { Text(c.word, fontSize = 20.sp, color = MaterialTheme.colorScheme.onSurface) }
+            }
+        }
+    }
+}
+
+/** Number row, letter (or symbol) rows and the bottom row. */
+@Composable
+private fun Keys(
+    symbols: Boolean,
+    onSymbols: () -> Unit,
+    shift: Shift,
+    onShift: () -> Unit,
+    chinese: Boolean,
+    onToggleChinese: () -> Unit,
+    onText: (String) -> Unit,
+    onBackspace: () -> Unit,
+    onEnter: () -> Unit,
+    onSwitchKeyboard: () -> Unit,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            NUMBER_ROW.forEach { c -> Key(c.toString(), height = 40.dp, preview = true) { onText(c.toString()) } }
+        }
+        val rows = if (symbols) SYMBOL_ROWS else LETTER_ROWS
+        rows.forEachIndexed { i, row ->
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                if (i == 2) {
+                    if (symbols) Spacer1(1.5f)
+                    else Key(
+                        when (shift) { Shift.Off -> "⇧"; Shift.On -> "⬆"; Shift.Lock -> "⇪" },
+                        1.5f, highlighted = shift != Shift.Off, onClick = onShift,
+                    )
+                }
+                if (i == 1 && !symbols) Spacer1(0.5f)
+                row.forEach { c ->
+                    val label = if (shift != Shift.Off && !symbols) c.uppercase() else c.toString()
+                    Key(label, preview = true) { onText(label) }
+                }
+                if (i == 1 && !symbols) Spacer1(0.5f)
+                if (i == 2) Key("⌫", 1.5f, repeat = true, onClick = onBackspace)
+            }
+        }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            Key(if (symbols) "ABC" else "?123", 1.4f, onClick = onSymbols)
+            Key("🌐", 1f, onClick = onSwitchKeyboard)
+            Key(if (chinese) "中" else "En", 1f, highlighted = chinese, onClick = onToggleChinese)
+            Key(if (chinese) "，" else ",", 1f) { onText(",") }
+            Key(if (chinese) "空格" else "space", 3.2f) { onText(" ") }
+            Key(if (chinese) "。" else ".", 1f) { onText(".") }
+            Key("⏎", 1.4f, onClick = onEnter)
+        }
+    }
+}
+
+/**
+ * One key. [preview] shows a bigger copy of the letter above your finger while pressed;
+ * [repeat] keeps firing while held (used for backspace). Every press gives a light tap
+ * vibration, like other keyboards (no permission needed for this kind).
+ */
+@Composable
+private fun RowScope.Key(
+    label: String,
+    weight: Float = 1f,
+    height: Dp = 46.dp,
+    preview: Boolean = false,
+    repeat: Boolean = false,
+    highlighted: Boolean = false,
+    onClick: () -> Unit,
+) {
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    val view = LocalView.current
+    val latestOnClick by rememberUpdatedState(onClick)
+    if (repeat) {
+        // While held: fire once, wait, then repeat quickly until released.
+        LaunchedEffect(pressed) {
+            if (!pressed) return@LaunchedEffect
+            view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+            latestOnClick()
+            delay(400)
+            while (true) {
+                latestOnClick()
+                delay(60)
+            }
+        }
+    }
+    // zIndex: draw a pressed key (and its preview) on top of its neighbours.
+    Box(Modifier.weight(weight).height(height).zIndex(if (pressed) 1f else 0f)) {
+        Box(
+            Modifier
+                .matchParentSize()
+                .clip(RoundedCornerShape(6.dp))
+                .background(
+                    if (pressed || highlighted) MaterialTheme.colorScheme.secondaryContainer
+                    else MaterialTheme.colorScheme.surface
+                )
+                .clickable(interactionSource = interaction, indication = null) {
+                    if (!repeat) {
+                        view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                        onClick()
+                    }
+                },
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(label, fontSize = 18.sp, color = MaterialTheme.colorScheme.onSurface)
+        }
+        if (preview && pressed) {
+            Box(
+                Modifier
+                    .align(Alignment.TopCenter)
+                    .offset(y = (-54).dp)
+                    .size(width = 48.dp, height = 52.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(MaterialTheme.colorScheme.primaryContainer),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(label, fontSize = 28.sp, color = MaterialTheme.colorScheme.onPrimaryContainer)
+            }
+        }
     }
 }
 

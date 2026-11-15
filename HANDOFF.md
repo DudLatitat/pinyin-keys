@@ -15,7 +15,13 @@
   matching (tones optional, setting to require them; v or u for ü), auto punctuation, Hint,
   Restart. Backspace in Practice only edits the pinyin buffer. Tested by the owner: works.
 - Milestone 5 code written: ☆ on each Assist card saves en/hanzi/pinyin/chunksJson/savedAt to
-  Room (saved/SavedSentences.kt); "Saved sentences" screen in the app with Delete. Next: owner tests it.
+  Room (saved/SavedSentences.kt); "Saved sentences" screen in the app with Delete. Tested: works.
+- Keyboard polish (written, untested): number row on top, key preview popup, held backspace
+  repeats, tap haptics, auto-capitalize via getCursorCapsMode, double-space period, shift
+  cycles off/one/lock, wide-screen layout (panel left, keys right at >= 600dp).
+- Chinese typing mode ("En/中" key): pinyin composing text + candidate bar from
+  PinyinDictionary (exact, prefix completions, then leading-part matches). Space takes the
+  top candidate, enter keeps raw letters, Chinese punctuation in this mode.
   - Signing: keystore generated; CI signs the release when SIGNING_* Actions secrets are set.
 - No Android SDK in the cloud workspace: app code is compiled only by CI. Read build
   failures from the workflow's job annotations/logs.
@@ -117,6 +123,7 @@ Ship each milestone as a working build before starting the next.
 - Chinese→English mode for received messages: maybe later, **not in scope now**.
 
 ## Out of scope
-- A general-purpose pinyin input method with candidate lists
+- (Was out of scope; the owner later asked for it.) A Chinese typing mode with candidates
+  now exists, using an offline AOSP dictionary (assets/pinyin_dict.txt, Apache 2.0).
 - Voice input
 - Any accounts, sync, analytics, or Play Store release
