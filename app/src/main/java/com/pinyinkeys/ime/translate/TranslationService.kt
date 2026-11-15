@@ -8,4 +8,7 @@ package com.pinyinkeys.ime.translate
 interface TranslationService {
     /** Blocking network call: run it off the main thread. Throws [TranslationException]. */
     fun translate(english: String): TranslationResult
+
+    /** 1–2 plain-English sentences on why [sentence] is structured that way. Blocking. */
+    fun explain(sentence: Sentence): String
 }

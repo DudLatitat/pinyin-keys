@@ -23,6 +23,9 @@ data class Sentence(
 )
 
 @Serializable
+data class WhyResult(val why: String)
+
+@Serializable
 data class TranslationResult(val sentences: List<Sentence>)
 
 /** Any failure the UI should show as "Couldn't translate". [userMessage] never contains message text. */

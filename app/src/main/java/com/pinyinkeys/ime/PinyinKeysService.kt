@@ -6,6 +6,8 @@ import android.view.KeyEvent
 import android.view.View
 import android.view.inputmethod.EditorInfo
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableStateMapOf
+import com.pinyinkeys.ime.translate.Sentence
 import android.util.Log
 import android.view.inputmethod.ExtractedTextRequest
 import androidx.lifecycle.lifecycleScope
@@ -54,6 +56,9 @@ class PinyinKeysService : InputMethodService(),
     private val assistState = mutableStateOf<AssistState>(AssistState.Idle)
     private var translateJob: Job? = null
 
+    /** "Why?" state per sentence card; a state map so Compose redraws each card on change. */
+    private val whyStates = mutableStateMapOf<Sentence, WhyState>()
+
     override fun onCreate() {
         super.onCreate()
         savedStateController.performRestore(null)
@@ -76,6 +81,8 @@ class PinyinKeysService : InputMethodService(),
                     assist = assistState.value,
                     onTranslate = ::translateField,
                     onInsertChinese = ::insertChinese,
+                    whyStates = whyStates,
+                    onWhy = ::explain,
                     onText = ::typeText,
                     onBackspace = ::backspace,
                     onEnter = ::enter,
@@ -93,6 +100,7 @@ class PinyinKeysService : InputMethodService(),
         if (!restarting) {
             translateJob?.cancel()
             assistState.value = AssistState.Idle
+            whyStates.clear()
         }
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_RESUME)
     }
@@ -165,6 +173,7 @@ class PinyinKeysService : InputMethodService(),
             return
         }
         translateJob?.cancel()
+        whyStates.clear()
         assistState.value = AssistState.Loading
         // lifecycleScope is cancelled automatically when the keyboard service is destroyed.
         translateJob = lifecycleScope.launch {
@@ -177,6 +186,32 @@ class PinyinKeysService : InputMethodService(),
                 if (e is kotlinx.coroutines.CancellationException) throw e
                 Log.w(TAG, "Translate failed: ${e.javaClass.simpleName}")
                 AssistState.Error("Couldn't translate. Try again.")
+            }
+        }
+    }
+
+    /** "Why?" tapped: use the saved answer if there is one, otherwise ask the API once. */
+    private fun explain(sentence: Sentence) {
+        if (sensitiveField.value) return
+        if (whyStates[sentence] is WhyState.Loading || whyStates[sentence] is WhyState.Loaded) return
+        whyStates[sentence] = WhyState.Loading
+        lifecycleScope.launch {
+            whyStates[sentence] = try {
+                withContext(Dispatchers.IO) {
+                    val cache = WhyCache(this@PinyinKeysService)
+                    cache.get(sentence)?.let { return@withContext WhyState.Loaded(it) }
+                    val service = Settings(this@PinyinKeysService).translationService()
+                        ?: return@withContext WhyState.Error("Add your API key in the Pinyin Keys app.")
+                    val why = service.explain(sentence)
+                    cache.put(sentence, why)
+                    WhyState.Loaded(why)
+                }
+            } catch (e: TranslationException) {
+                WhyState.Error(e.userMessage)
+            } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                Log.w(TAG, "Why failed: ${e.javaClass.simpleName}")
+                WhyState.Error("Couldn't load explanation. Try again.")
             }
         }
     }

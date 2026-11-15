@@ -29,6 +29,9 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.ui.text.font.FontWeight
 import com.pinyinkeys.ime.translate.Sentence
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -56,6 +59,8 @@ fun KeyboardUi(
     assist: AssistState,
     onTranslate: () -> Unit,
     onInsertChinese: () -> Unit,
+    whyStates: Map<Sentence, WhyState>,
+    onWhy: (Sentence) -> Unit,
     onText: (String) -> Unit,
     onBackspace: () -> Unit,
     onEnter: () -> Unit,
@@ -73,7 +78,7 @@ fun KeyboardUi(
                     Modifier.widthIn(max = 720.dp).fillMaxWidth().padding(4.dp),
                     verticalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
-                    if (!sensitive) AssistPanel(assist, onTranslate, onInsertChinese)
+                    if (!sensitive) AssistPanel(assist, onTranslate, onInsertChinese, whyStates, onWhy)
                     val rows = if (symbols) SYMBOL_ROWS else LETTER_ROWS
                     rows.forEachIndexed { i, row ->
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -129,7 +134,13 @@ private fun RowScope.Spacer1(weight: Float) {
 
 /** Translate button, sentence cards and "Insert Chinese", above the keys. */
 @Composable
-private fun AssistPanel(state: AssistState, onTranslate: () -> Unit, onInsertChinese: () -> Unit) {
+private fun AssistPanel(
+    state: AssistState,
+    onTranslate: () -> Unit,
+    onInsertChinese: () -> Unit,
+    whyStates: Map<Sentence, WhyState>,
+    onWhy: (Sentence) -> Unit,
+) {
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             FilledTonalButton(onClick = onTranslate, enabled = state !is AssistState.Loading) {
@@ -151,22 +162,64 @@ private fun AssistPanel(state: AssistState, onTranslate: () -> Unit, onInsertChi
                 Modifier.heightIn(max = 220.dp).verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
-                state.result.sentences.forEach { SentenceCard(it) }
+                state.result.sentences.forEachIndexed { i, sentence ->
+                    // key(): remember each card's expanded state separately, reset on a new translation.
+                    androidx.compose.runtime.key(state.result, i) {
+                        SentenceCard(sentence, whyStates[sentence]) { onWhy(sentence) }
+                    }
+                }
             }
         }
     }
 }
 
+/**
+ * One sentence: hanzi and pinyin. Tap to expand into structure chips and a "Why?" button;
+ * tap again to collapse.
+ */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun SentenceCard(sentence: Sentence) {
+private fun SentenceCard(sentence: Sentence, why: WhyState?, onWhy: () -> Unit) {
+    var expanded by remember { mutableStateOf(false) }
     Column(
         Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(8.dp))
             .background(MaterialTheme.colorScheme.surface)
+            .clickable { expanded = !expanded }
             .padding(horizontal = 12.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         Text(sentence.hanzi, fontSize = 24.sp, color = MaterialTheme.colorScheme.onSurface)
         Text(sentence.pinyin, fontSize = 15.sp, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Medium)
+        if (expanded) {
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                sentence.chunks.forEach { chunk ->
+                    Column(
+                        Modifier
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(MaterialTheme.colorScheme.secondaryContainer)
+                            .padding(horizontal = 8.dp, vertical = 4.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        Text(chunk.hanzi, fontSize = 18.sp, color = MaterialTheme.colorScheme.onSecondaryContainer)
+                        Text(chunk.pinyin, fontSize = 12.sp, color = MaterialTheme.colorScheme.primary)
+                        Text(chunk.role, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSecondaryContainer)
+                    }
+                }
+            }
+            when (why) {
+                null -> TextButton(onClick = onWhy) { Text("Why?") }
+                WhyState.Loading -> CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                is WhyState.Loaded -> Text(why.text, fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurface)
+                is WhyState.Error -> Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(why.message, fontSize = 13.sp, color = MaterialTheme.colorScheme.error)
+                    TextButton(onClick = onWhy) { Text("Retry") }
+                }
+            }
+        }
     }
 }

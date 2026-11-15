@@ -6,7 +6,9 @@
 - Milestone 1 tested in WeChat by the owner: works. Signed release builds work in CI.
 - Milestone 2 code written: settings screen (API key in EncryptedSharedPreferences, base URL,
   model), Translate button, sentence cards, Insert Chinese. Raw HTTPS to the Messages API with
-  structured outputs (json_schema) and effort=low. Next: owner tests it in WeChat.
+  structured outputs (json_schema) and effort=low. Tested by the owner in WeChat: works.
+- Milestone 3 code written: tap a card for structure chips, "Why?" fetched on tap and cached
+  encrypted on the phone (WhyCache, keyed by SHA-256 of the sentence). Next: owner tests it.
   - Signing: keystore generated; CI signs the release when SIGNING_* Actions secrets are set.
 - No Android SDK in the cloud workspace: app code is compiled only by CI. Read build
   failures from the workflow's job annotations/logs.

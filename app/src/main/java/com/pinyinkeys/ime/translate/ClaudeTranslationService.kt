@@ -2,7 +2,6 @@ package com.pinyinkeys.ime.translate
 
 import android.util.Log
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonArray
@@ -26,30 +25,54 @@ class ClaudeTranslationService(
     private val json = Json { ignoreUnknownKeys = true }
 
     override fun translate(english: String): TranslationResult {
+        val text = call(Prompts.TRANSLATE_SYSTEM, english, Prompts.TRANSLATE_SCHEMA, maxTokens = 8000)
+        return try {
+            json.decodeFromString(TranslationResult.serializer(), text)
+        } catch (e: Exception) {
+            Log.w(TAG, "Bad JSON from API: ${e.javaClass.simpleName}")
+            throw TranslationException("Couldn't translate. Try again.", e)
+        }.also {
+            if (it.sentences.isEmpty()) throw TranslationException("Nothing to translate.")
+        }
+    }
+
+    override fun explain(sentence: Sentence): String {
+        val text = call(Prompts.WHY_SYSTEM, Prompts.whyInput(sentence), Prompts.WHY_SCHEMA, maxTokens = 2000)
+        return try {
+            json.decodeFromString(WhyResult.serializer(), text).why.trim()
+        } catch (e: Exception) {
+            Log.w(TAG, "Bad JSON from API: ${e.javaClass.simpleName}")
+            throw TranslationException("Couldn't load explanation. Try again.", e)
+        }.ifEmpty { throw TranslationException("Couldn't load explanation. Try again.") }
+    }
+
+    /** One Messages API request with structured output. Returns the JSON text the model produced. */
+    private fun call(system: String, user: String, schema: String, maxTokens: Int): String {
         val body = buildJsonObject {
             put("model", model)
-            put("max_tokens", 8000)
-            put("system", Prompts.TRANSLATE_SYSTEM)
+            put("max_tokens", maxTokens)
+            put("system", system)
             put("messages", buildJsonArray {
                 add(buildJsonObject {
                     put("role", "user")
-                    put("content", english)
+                    put("content", user)
                 })
             })
-            // effort=low: translation doesn't need deep reasoning, and reasoning is billed.
+            // effort=low: these tasks don't need deep reasoning, and reasoning is billed.
             // format=json_schema: the API guarantees the reply matches our schema.
             put("output_config", buildJsonObject {
                 put("effort", "low")
                 put("format", buildJsonObject {
                     put("type", "json_schema")
-                    put("schema", json.parseToJsonElement(Prompts.TRANSLATE_SCHEMA))
+                    put("schema", json.parseToJsonElement(schema))
                 })
             })
         }
 
-        val responseText = post(body.toString())
         val response = try {
-            json.parseToJsonElement(responseText).jsonObject
+            json.parseToJsonElement(post(body.toString())).jsonObject
+        } catch (e: TranslationException) {
+            throw e
         } catch (e: Exception) {
             throw TranslationException("Couldn't translate. Try again.", e)
         }
@@ -58,22 +81,11 @@ class ClaudeTranslationService(
             "refusal" -> throw TranslationException("The model declined this text.")
             "max_tokens" -> throw TranslationException("Text too long. Try a shorter message.")
         }
-        val text = response["content"]?.jsonArray
+        return response["content"]?.jsonArray
             ?.map { it.jsonObject }
             ?.firstOrNull { it["type"]?.jsonPrimitive?.content == "text" }
             ?.get("text")?.jsonPrimitive?.content
             ?: throw TranslationException("Couldn't translate. Try again.")
-
-        return try {
-            json.decodeFromString(TranslationResult.serializer(), text).also {
-                if (it.sentences.isEmpty()) throw TranslationException("Nothing to translate.")
-            }
-        } catch (e: TranslationException) {
-            throw e
-        } catch (e: Exception) {
-            Log.w(TAG, "Bad JSON from API: ${e.javaClass.simpleName}")
-            throw TranslationException("Couldn't translate. Try again.", e)
-        }
     }
 
     private fun post(body: String): String {

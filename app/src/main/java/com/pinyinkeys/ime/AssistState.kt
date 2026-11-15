@@ -9,3 +9,10 @@ sealed interface AssistState {
     data class Result(val result: TranslationResult) : AssistState
     data class Error(val message: String) : AssistState
 }
+
+/** The "Why?" explanation for one sentence card. */
+sealed interface WhyState {
+    data object Loading : WhyState
+    data class Loaded(val text: String) : WhyState
+    data class Error(val message: String) : WhyState
+}
