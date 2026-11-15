@@ -60,6 +60,11 @@ class Settings(context: Context) {
         get() = readList("pinned_clips")
         set(v) = writeList("pinned_clips", v)
 
+    /** Text the user pasted with this keyboard (newest first). Encrypted, on the phone only. */
+    var clipHistory: List<String>
+        get() = readList("clip_history")
+        set(v) = writeList("clip_history", v)
+
     private fun readList(key: String): List<String> = runCatching {
         Json.decodeFromString(
             ListSerializer(String.serializer()),

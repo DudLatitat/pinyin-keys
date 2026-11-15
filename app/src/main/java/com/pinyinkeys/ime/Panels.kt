@@ -58,112 +58,137 @@ private fun RowScope.PanelButton(text: String, weight: Float = 1f, onClick: () -
     ) { Text(text, fontSize = 16.sp, color = kb.label) }
 }
 
-/** Emoji grid with category tabs; "Recent" first when there are any. */
-@Composable
-fun EmojiPanel(recent: List<String>, onEmoji: (String) -> Unit, onBackspace: () -> Unit, onClose: () -> Unit) {
-    val kb = LocalKb.current
-    val cats = remember(recent.isEmpty()) {
-        (if (recent.isEmpty()) emptyList() else listOf(Emoji.Category("🕘", "Recent", emptyList()))) + Emoji.categories
-    }
-    var selected by remember { mutableStateOf(0) }
-    val current = cats[selected.coerceIn(0, cats.lastIndex)]
-    val items = if (current.name == "Recent") recent else current.items
-    Column(Modifier.fillMaxWidth().height(PANEL_HEIGHT)) {
-        LazyVerticalGrid(
-            columns = GridCells.Adaptive(44.dp),
-            modifier = Modifier.weight(1f).fillMaxWidth(),
-        ) {
-            items(items) { e ->
-                Box(
-                    Modifier.height(44.dp).clickable { onEmoji(e) },
-                    contentAlignment = Alignment.Center,
-                ) { Text(e, fontSize = 26.sp) }
-            }
-        }
-        Row(Modifier.fillMaxWidth().height(40.dp), verticalAlignment = Alignment.CenterVertically) {
-            Box(
-                Modifier.height(36.dp).clip(RoundedCornerShape(6.dp)).background(kb.functionKey)
-                    .clickable(onClick = onClose).padding(horizontal = 12.dp),
-                contentAlignment = Alignment.Center,
-            ) { Text("ABC", fontSize = 15.sp, color = kb.label) }
-            LazyRow(Modifier.weight(1f)) {
-                itemsIndexed(cats) { i, c ->
-                    Box(
-                        Modifier.size(40.dp).clip(RoundedCornerShape(6.dp))
-                            .background(if (i == selected) kb.key else kb.background)
-                            .clickable { selected = i },
-                        contentAlignment = Alignment.Center,
-                    ) { Text(c.icon, fontSize = 20.sp) }
-                }
-            }
-            Box(
-                Modifier.height(36.dp).clip(RoundedCornerShape(6.dp)).background(kb.functionKey)
-                    .clickable(onClick = onBackspace).padding(horizontal = 12.dp),
-                contentAlignment = Alignment.Center,
-            ) { Text("⌫", fontSize = 18.sp, color = kb.label) }
-        }
-    }
-}
+/** Emoji categories with "Recent" first. */
+val EMOJI_TABS: List<Emoji.Category> =
+    listOf(Emoji.Category("🕘", "Recent", emptyList())) + Emoji.categories
 
 /**
- * Clipboard: shows what's copied right now (read only because you opened this panel)
- * and your pinned snippets. Tap one to paste it.
+ * Top bar while the emoji panel is open (it replaces the toolbar, like a standard
+ * keyboard): back to letters, the category icons, and backspace.
  */
 @Composable
-fun ClipboardPanel(
-    readClipboard: () -> String?,
-    pinned: List<String>,
-    onPaste: (String) -> Unit,
-    onPin: (String) -> Unit,
-    onUnpin: (String) -> Unit,
-    onClose: () -> Unit,
-) {
+fun EmojiHeader(selected: Int, onSelect: (Int) -> Unit, onClose: () -> Unit, onBackspace: () -> Unit) {
     val kb = LocalKb.current
-    var current by remember { mutableStateOf<String?>(null) }
-    // Read once each time the panel is opened (an explicit user action).
-    LaunchedEffect(Unit) { current = readClipboard() }
-    Column(Modifier.fillMaxWidth().height(PANEL_HEIGHT), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("Clipboard", fontSize = 14.sp, color = kb.label.copy(alpha = 0.7f), modifier = Modifier.weight(1f))
-            Box(
-                Modifier.height(32.dp).clip(RoundedCornerShape(6.dp)).background(kb.functionKey)
-                    .clickable(onClick = onClose).padding(horizontal = 12.dp),
-                contentAlignment = Alignment.Center,
-            ) { Text("ABC", fontSize = 14.sp, color = kb.label) }
+    Row(
+        Modifier.fillMaxWidth().height(44.dp).background(kb.toolbar).padding(horizontal = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        HeaderIcon("⌨", onClick = onClose)
+        Box(Modifier.padding(horizontal = 4.dp).size(width = 1.dp, height = 22.dp).background(kb.label.copy(alpha = 0.3f)))
+        LazyRow(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+            itemsIndexed(EMOJI_TABS) { i, c ->
+                HeaderIcon(c.icon, active = i == selected) { onSelect(i) }
+            }
         }
-        LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            item {
-                val c = current
-                if (c.isNullOrEmpty()) {
-                    Text("Nothing copied right now.", fontSize = 14.sp, color = kb.label.copy(alpha = 0.6f))
-                } else {
-                    ClipRow(c, actionLabel = if (c in pinned) "Pinned" else "📌 Pin",
-                        onTap = { onPaste(c) }, onAction = { if (c !in pinned) onPin(c) })
-                }
+        HeaderIcon("⌫", onClick = onBackspace)
+    }
+}
+
+/** Big emoji grid (8 per row on a phone), filling the key area. */
+@Composable
+fun EmojiGrid(selected: Int, recent: List<String>, onEmoji: (String) -> Unit) {
+    val kb = LocalKb.current
+    val tab = EMOJI_TABS[selected.coerceIn(0, EMOJI_TABS.lastIndex)]
+    val items = if (tab.name == "Recent") recent else tab.items
+    Box(Modifier.fillMaxWidth().height(PANEL_HEIGHT)) {
+        if (items.isEmpty()) {
+            Text("Emoji you use will show up here.", fontSize = 14.sp, color = kb.label.copy(alpha = 0.6f),
+                modifier = Modifier.align(Alignment.Center))
+        }
+        LazyVerticalGrid(columns = GridCells.Adaptive(44.dp), modifier = Modifier.fillMaxSize()) {
+            items(items) { e ->
+                Box(
+                    Modifier.height(50.dp).clickable { onEmoji(e) },
+                    contentAlignment = Alignment.Center,
+                ) { Text(e, fontSize = 30.sp) }
             }
-            if (pinned.isNotEmpty()) item {
-                Text("Pinned", fontSize = 13.sp, color = kb.label.copy(alpha = 0.6f))
-            }
-            items(pinned) { p -> ClipRow(p, actionLabel = "✕", onTap = { onPaste(p) }, onAction = { onUnpin(p) }) }
         }
     }
 }
 
+/** A round icon in a panel header; [active] draws a highlight behind it. */
 @Composable
-private fun ClipRow(text: String, actionLabel: String, onTap: () -> Unit, onAction: () -> Unit) {
+private fun HeaderIcon(icon: String, active: Boolean = false, onClick: () -> Unit) {
+    val kb = LocalKb.current
+    Box(
+        Modifier
+            .size(38.dp)
+            .clip(RoundedCornerShape(19.dp))
+            .background(if (active) kb.key else kb.toolbar)
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) { Text(icon, fontSize = 20.sp, color = kb.label) }
+}
+
+/** Top bar while the clipboard panel is open. */
+@Composable
+fun ClipboardHeader(onClose: () -> Unit, onClearHistory: () -> Unit) {
     val kb = LocalKb.current
     Row(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(6.dp)).background(kb.key),
+        Modifier.fillMaxWidth().height(44.dp).background(kb.toolbar).padding(horizontal = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(
-            text, fontSize = 15.sp, color = kb.label, maxLines = 2, overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f).clickable(onClick = onTap).padding(10.dp),
-        )
-        Text(
-            actionLabel, fontSize = 14.sp, color = kb.accent,
-            modifier = Modifier.clickable(onClick = onAction).padding(10.dp),
-        )
+        HeaderIcon("⌨", onClick = onClose)
+        Box(Modifier.padding(horizontal = 4.dp).size(width = 1.dp, height = 22.dp).background(kb.label.copy(alpha = 0.3f)))
+        Text("Clipboard", fontSize = 17.sp, color = kb.label, modifier = Modifier.weight(1f).padding(start = 6.dp))
+        HeaderIcon("🗑", onClick = onClearHistory)
+    }
+}
+
+/** One clipboard item and where it came from. */
+data class ClipItem(val text: String, val pinned: Boolean, val current: Boolean)
+
+/**
+ * Clipboard as a grid of cards: what's copied now (read only because you opened
+ * this panel), pinned snippets, then things you've pasted with this keyboard.
+ * Tap a card to paste it; 📌 pins or unpins; ✕ removes it from the history.
+ */
+@Composable
+fun ClipboardGrid(
+    items: List<ClipItem>,
+    onPaste: (String) -> Unit,
+    onTogglePin: (ClipItem) -> Unit,
+    onDelete: (ClipItem) -> Unit,
+) {
+    val kb = LocalKb.current
+    Box(Modifier.fillMaxWidth().height(PANEL_HEIGHT)) {
+        if (items.isEmpty()) {
+            Text("Copy something, then open this again.", fontSize = 14.sp, color = kb.label.copy(alpha = 0.6f),
+                modifier = Modifier.align(Alignment.Center))
+        }
+        LazyVerticalGrid(
+            columns = GridCells.Adaptive(110.dp),
+            modifier = Modifier.fillMaxSize(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            items(items) { item ->
+                Column(
+                    Modifier
+                        .height(108.dp)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(if (item.current) kb.functionKey else kb.key)
+                        .clickable { onPaste(item.text) }
+                        .padding(start = 10.dp, end = 4.dp, top = 8.dp),
+                ) {
+                    Text(item.text, fontSize = 14.sp, color = kb.label, maxLines = 3,
+                        overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (item.current) Text("Now", fontSize = 11.sp, color = kb.accent, modifier = Modifier.weight(1f))
+                        else Box(Modifier.weight(1f))
+                        Text(
+                            "📌", fontSize = 14.sp,
+                            color = kb.label.copy(alpha = if (item.pinned) 1f else 0.35f),
+                            modifier = Modifier.clickable { onTogglePin(item) }.padding(6.dp),
+                        )
+                        if (!item.pinned && !item.current) Text(
+                            "✕", fontSize = 13.sp, color = kb.label.copy(alpha = 0.6f),
+                            modifier = Modifier.clickable { onDelete(item) }.padding(6.dp),
+                        )
+                    }
+                }
+            }
+        }
     }
 }
 

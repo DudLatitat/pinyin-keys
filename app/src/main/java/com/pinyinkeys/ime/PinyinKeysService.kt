@@ -75,6 +75,11 @@ class PinyinKeysService : InputMethodService(),
 
     private val recentEmoji = mutableStateOf<List<String>>(emptyList())
     private val pinnedClips = mutableStateOf<List<String>>(emptyList())
+    /** Things pasted with this keyboard, newest first (only text the user chose to paste). */
+    private val clipHistory = mutableStateOf<List<String>>(emptyList())
+    private val showPasteChip = mutableStateOf(false)
+    /** Copy time of the clip we last offered, so the same copy isn't offered twice. */
+    private var offeredClipTime = 0L
     private val practiceState = mutableStateOf<PracticeState>(PracticeState.Idle)
     private var strictTones = false
 
@@ -91,6 +96,7 @@ class PinyinKeysService : InputMethodService(),
             val s = withContext(Dispatchers.IO) { Settings(this@PinyinKeysService) }
             recentEmoji.value = s.recentEmoji
             pinnedClips.value = s.pinnedClips
+            clipHistory.value = s.clipHistory
         }
         savedStateController.performRestore(null)
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_CREATE)
@@ -139,9 +145,14 @@ class PinyinKeysService : InputMethodService(),
                     onEmoji = ::typeEmoji,
                     readClipboard = ::readClipboard,
                     pinnedClips = pinnedClips.value,
+                    clipHistory = clipHistory.value,
                     onPaste = ::pasteText,
                     onPin = { t -> updatePinned(listOf(t) + pinnedClips.value) },
                     onUnpin = { t -> updatePinned(pinnedClips.value - t) },
+                    onDeleteClip = { t -> updateHistory(clipHistory.value - t) },
+                    onClearClipHistory = { updateHistory(emptyList()) },
+                    showPasteChip = showPasteChip.value,
+                    onPasteChip = ::pasteFromChip,
                     onEdit = ::edit,
                     onOpenSettings = ::openSettings,
                 )
@@ -163,6 +174,7 @@ class PinyinKeysService : InputMethodService(),
         setComposing("")
         shift.value = Shift.Off
         updateAutoCaps()
+        checkRecentCopy()
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_RESUME)
     }
 
@@ -194,6 +206,7 @@ class PinyinKeysService : InputMethodService(),
     }
 
     private fun typeText(text: String) {
+        showPasteChip.value = false
         if (practiceTyped(text)) return
         clearAssist()
         val ic = currentInputConnection ?: return
@@ -296,7 +309,38 @@ class PinyinKeysService : InputMethodService(),
         if (composing.value.isNotEmpty()) commitFirstCandidate()
         clearAssist()
         currentInputConnection?.commitText(text, 1)
+        showPasteChip.value = false
+        updateHistory(listOf(text) + clipHistory.value)
         updateAutoCaps()
+    }
+
+    /**
+     * Checks only WHEN the clipboard last changed (its description, not its text),
+     * and shows a Paste button if that was within the last minute. The text itself is
+     * read only if the user taps Paste (CLAUDE.md: clipboard read on explicit action).
+     */
+    private fun checkRecentCopy() {
+        showPasteChip.value = false
+        if (sensitiveField.value) return
+        val cm = getSystemService(android.content.ClipboardManager::class.java) ?: return
+        val desc = cm.primaryClipDescription ?: return
+        val time = desc.timestamp
+        val isText = desc.hasMimeType("text/*")
+        if (isText && time != offeredClipTime && System.currentTimeMillis() - time < 60_000) {
+            offeredClipTime = time
+            showPasteChip.value = true
+        }
+    }
+
+    private fun pasteFromChip() {
+        showPasteChip.value = false
+        readClipboard()?.let(::pasteText)
+    }
+
+    private fun updateHistory(list: List<String>) {
+        val updated = list.distinct().filter { it.length <= 2000 }.take(20)
+        clipHistory.value = updated
+        lifecycleScope.launch(Dispatchers.IO) { Settings(this@PinyinKeysService).clipHistory = updated }
     }
 
     private fun updatePinned(list: List<String>) {

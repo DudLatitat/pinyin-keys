@@ -31,6 +31,10 @@
   clipboard (reads the clip only when the panel is opened; pinned snippets stored encrypted;
   no background clipboard history, per CLAUDE.md), text editing (arrows, select/cut/copy/paste),
   settings shortcut. Clipboard panel is hidden in password fields.
+- Emoji/clipboard restyled like the owner's default keyboard (panel header replaces toolbar,
+  big emoji grid, clipboard card grid). "📋 Paste" chip: on keyboard open, only the clip's
+  timestamp (ClipDescription) is checked; the text is read only when Paste is tapped.
+  Clipboard history = text pasted through this keyboard (encrypted, max 20).
   - Signing: keystore generated; CI signs the release when SIGNING_* Actions secrets are set.
 - No Android SDK in the cloud workspace: app code is compiled only by CI. Read build
   failures from the workflow's job annotations/logs.

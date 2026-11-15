@@ -141,15 +141,24 @@ fun KeyboardUi(
     onEmoji: (String) -> Unit,
     readClipboard: () -> String?,
     pinnedClips: List<String>,
+    clipHistory: List<String>,
     onPaste: (String) -> Unit,
     onPin: (String) -> Unit,
     onUnpin: (String) -> Unit,
+    onDeleteClip: (String) -> Unit,
+    onClearClipHistory: () -> Unit,
+    showPasteChip: Boolean,
+    onPasteChip: () -> Unit,
     onEdit: (EditAction) -> Unit,
     onOpenSettings: () -> Unit,
 ) {
     // Which panel shows instead of the letter keys (emoji, clipboard, editing).
     var panelShown by remember { mutableStateOf(Panel.Keys) }
     val togglePanel: (Panel) -> Unit = { p -> panelShown = if (panelShown == p) Panel.Keys else p }
+    var emojiTab by remember { mutableStateOf(1) }
+    // What's copied right now: read only when the clipboard panel is opened.
+    var currentClip by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(panelShown) { if (panelShown == Panel.Clipboard && !sensitive) currentClip = readClipboard() }
     // 0 = letters, 1 and 2 = symbol pages.
     var page by remember { mutableStateOf(0) }
     val dark = isSystemInDarkTheme()
@@ -161,9 +170,13 @@ fun KeyboardUi(
         Surface(color = kb.background) {
             // While typing pinyin, the suggestion bar takes the toolbar's place (like other keyboards).
             val toolbar: @Composable () -> Unit = {
+                val close = { panelShown = Panel.Keys }
                 if (composing.isNotEmpty()) CandidateBar(composing, candidates, onCandidate)
+                else if (panelShown == Panel.Emoji) EmojiHeader(emojiTab, { emojiTab = it }, close, onBackspace)
+                else if (panelShown == Panel.Clipboard && !sensitive) ClipboardHeader(close, onClearClipHistory)
                 else Toolbar(sensitive, mode, onMode, assist, onTranslate, onInsertChinese,
-                    practice, onStartPractice, onHint, panelShown, togglePanel, onOpenSettings)
+                    practice, onStartPractice, onHint, panelShown, togglePanel, onOpenSettings,
+                    showPasteChip && !sensitive, onPasteChip)
             }
             val panel: @Composable () -> Unit = {
                 if (!sensitive) when (mode) {
@@ -175,10 +188,23 @@ fun KeyboardUi(
                 val close = { panelShown = Panel.Keys }
                 when (panelShown) {
                     Panel.Keys -> Keys(page, { page = it }, shift, onShift, chinese, onToggleChinese, onText, onBackspace, onEnter, onSwitchKeyboard)
-                    Panel.Emoji -> EmojiPanel(recentEmoji, onEmoji, onBackspace, close)
+                    Panel.Emoji -> EmojiGrid(emojiTab, recentEmoji, onEmoji)
                     // No clipboard or editing panel in password fields.
                     Panel.Clipboard -> if (sensitive) Keys(page, { page = it }, shift, onShift, chinese, onToggleChinese, onText, onBackspace, onEnter, onSwitchKeyboard)
-                        else ClipboardPanel(readClipboard, pinnedClips, onPaste, onPin, onUnpin, close)
+                        else {
+                            val cur = currentClip
+                            val items = buildList {
+                                if (!cur.isNullOrEmpty()) add(ClipItem(cur, cur in pinnedClips, current = true))
+                                pinnedClips.filter { it != cur }.forEach { add(ClipItem(it, pinned = true, current = false)) }
+                                clipHistory.filter { it != cur && it !in pinnedClips }.forEach { add(ClipItem(it, pinned = false, current = false)) }
+                            }
+                            ClipboardGrid(
+                                items,
+                                onPaste = { onPaste(it); close() },
+                                onTogglePin = { if (it.pinned) onUnpin(it.text) else onPin(it.text) },
+                                onDelete = { onDeleteClip(it.text) },
+                            )
+                        }
                     Panel.Edit -> EditPanel(onEdit, onBackspace, close)
                 }
             }
@@ -227,6 +253,8 @@ private fun Toolbar(
     panel: Panel,
     onPanel: (Panel) -> Unit,
     onOpenSettings: () -> Unit,
+    showPasteChip: Boolean,
+    onPasteChip: () -> Unit,
 ) {
     val kb = LocalKb.current
     Row(
@@ -240,6 +268,8 @@ private fun Toolbar(
           verticalAlignment = Alignment.CenterVertically,
           horizontalArrangement = Arrangement.spacedBy(6.dp),
       ) {
+        // Something was just copied: offer it (the text is read only when tapped).
+        if (showPasteChip) Pill("📋 Paste", accent = true, onClick = onPasteChip)
         if (!sensitive) {
             // Tap to switch between Assist and Practice.
             Pill(if (mode == Mode.Assist) "Assist" else "Practice", selected = true) {
