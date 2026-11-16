@@ -16,6 +16,47 @@ object Prompts {
         - Output only the JSON object.
     """.trimIndent()
 
+    /** Added to the translate instructions when the polite tone is chosen. */
+    val POLITE_NOTE = """
+        Tone override: the reader is writing to an elder, a stranger or someone they should be
+        respectful to. Use polite, warm Mandarin (您 where natural, 请, 谢谢您), not slang.
+    """.trimIndent()
+
+    val EXPLAIN_SYSTEM = """
+        A beginner Mandarin learner received this Chinese text message and wants to understand it.
+        - "sentences": split the message into sentences, in order. For each: "hanzi" (the
+          original Chinese exactly as written), "pinyin" (with tone marks, words separated by
+          spaces) and "en" (a natural English translation, keeping the tone).
+        - "reply": a short, natural, casual reply the learner could send, as "hanzi", "pinyin"
+          and "en". Keep it simple (beginner level).
+        - Output only the JSON object.
+    """.trimIndent()
+
+    const val EXPLAIN_SCHEMA = """
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sentences", "reply"],
+      "properties": {
+        "sentences": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["en", "hanzi", "pinyin"],
+            "properties": {"en": {"type": "string"}, "hanzi": {"type": "string"}, "pinyin": {"type": "string"}}
+          }
+        },
+        "reply": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["en", "hanzi", "pinyin"],
+          "properties": {"en": {"type": "string"}, "hanzi": {"type": "string"}, "pinyin": {"type": "string"}}
+        }
+      }
+    }
+    """
+
     val DETAILS_SYSTEM = """
         You break down one Mandarin (Simplified Chinese) sentence for a beginner learner.
         You get the English, the Chinese and its pinyin.

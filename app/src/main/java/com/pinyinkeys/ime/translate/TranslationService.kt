@@ -11,7 +11,17 @@ interface TranslationService {
      * it off the main thread. Throws [TranslationException]. [onLine] is called (on the
      * calling thread) with each line's index as soon as that line's translation arrives.
      */
-    fun translateLines(lines: List<String>, onLine: (Int, Sentence) -> Unit = { _, _ -> }): List<Sentence>
+    fun translateLines(
+        lines: List<String>,
+        polite: Boolean = false,
+        onLine: (Int, Sentence) -> Unit = { _, _ -> },
+    ): List<Sentence>
+
+    /**
+     * For a received Chinese [message]: each sentence with pinyin and English, plus a short
+     * casual reply. Blocking. Throws [TranslationException].
+     */
+    fun explainChinese(message: String): Explained
 
     /**
      * Opens the connection to the API ahead of time, so the first Translate is faster.

@@ -11,7 +11,12 @@ import com.pinyinkeys.ime.translate.TranslationService
  *  2. answer each from the built-in phrasebook or the on-phone cache (instant, free),
  *  3. send only the remaining sentences to the API, and cache what comes back.
  */
-class Translator(private val context: Context, private val service: TranslationService) {
+class Translator(
+    private val context: Context,
+    private val service: TranslationService,
+    /** Polite tone (elders, strangers): skips the casual phrasebook, cached separately. */
+    private val polite: Boolean = false,
+) {
 
     /** [onSentence] gets (index, sentence) as each one becomes available, in any order. */
     fun translate(text: String, onSentence: (Int, Sentence) -> Unit = { _, _ -> }): List<Sentence> {
@@ -21,21 +26,24 @@ class Translator(private val context: Context, private val service: TranslationS
         val out = arrayOfNulls<Sentence>(lines.size)
         val misses = ArrayList<Int>()
         lines.forEachIndexed { i, line ->
-            val known = Phrasebook.get(context, line) ?: cache.getTranslation(line)
+            val known = (if (polite) null else Phrasebook.get(context, line)) ?: cache.getTranslation(key(line))
             if (known != null) {
                 out[i] = known
                 onSentence(i, known)
             } else misses += i
         }
         if (misses.isNotEmpty()) {
-            val fresh = service.translateLines(misses.map { lines[it] }) { j, s -> onSentence(misses[j], s) }
+            val fresh = service.translateLines(misses.map { lines[it] }, polite) { j, s -> onSentence(misses[j], s) }
             fresh.forEachIndexed { j, s ->
                 out[misses[j]] = s
-                cache.putTranslation(lines[misses[j]], s)
+                cache.putTranslation(key(lines[misses[j]]), s.copy(en = lines[misses[j]]))
             }
         }
         return out.map { it ?: throw TranslationException("Couldn't translate. Try again.") }
     }
+
+    /** Polite translations are cached under a different key from casual ones. */
+    private fun key(line: String) = if (polite) "[polite] $line" else line
 
     companion object {
         /** Splits after . ! ? (and line breaks), keeping the punctuation with its sentence. */

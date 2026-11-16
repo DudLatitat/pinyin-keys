@@ -50,6 +50,9 @@
   (assets/phrasebook.tsv, hand-written) or SentenceCache ("tr:" entries), and sends only
   misses as numbered lines (model returns hanzi+pinyin per line). warmUp() = GET /v1/models
   on keyboard open (no text; CLAUDE.md exception).
+- 1.1.0: 解 explainChinese (clipboard on tap -> sentences + reply), polite tone (Settings.polite,
+  separate cache keys, no phrasebook), space-bar cursor slide and long-press alternates
+  (Key onCursor/alternates in KeyboardUi.kt), phrasebook ~430 lines.
 - App icon: adaptive vector (white key with 中 on blue), with a monochrome layer.
 - Releases (owner: no prereleases): every signed CI build publishes a full release
   `v<versionName>` with RELEASE_NOTES.md, skipping if that version already exists. Bump

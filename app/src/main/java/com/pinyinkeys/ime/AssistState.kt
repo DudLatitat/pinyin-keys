@@ -7,7 +7,12 @@ sealed interface AssistState {
     data object Idle : AssistState
     data object Loading : AssistState
     /** [complete] is false while sentences are still streaming in. */
-    data class Result(val result: TranslationResult, val complete: Boolean = true) : AssistState
+    data class Result(
+        val result: TranslationResult,
+        val complete: Boolean = true,
+        /** Set after explaining a received Chinese message: a suggested reply. */
+        val reply: com.pinyinkeys.ime.translate.Sentence? = null,
+    ) : AssistState
     data class Error(val message: String) : AssistState
 }
 

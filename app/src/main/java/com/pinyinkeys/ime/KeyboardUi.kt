@@ -61,6 +61,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.tween
+import kotlin.math.roundToInt
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -104,6 +105,17 @@ private val LightKb = KbColors(
     accent = Color(0xFF2F6BFF),
 )
 internal val LocalKb = staticCompositionLocalOf { DarkKb }
+
+/** What holding a key offers (first = the small hint shown on the key). */
+private val ALTERNATES: Map<Char, List<String>> = mapOf(
+    'q' to listOf("1"), 'w' to listOf("2"), 'e' to listOf("3", "é", "è", "ê", "ë", "ē"),
+    'r' to listOf("4"), 't' to listOf("5"), 'y' to listOf("6", "ý", "ÿ"),
+    'u' to listOf("7", "ü", "ú", "ù", "û", "ū"), 'i' to listOf("8", "í", "ì", "î", "ï", "ī"),
+    'o' to listOf("9", "ó", "ò", "ô", "ö", "õ", "ō"), 'p' to listOf("0"),
+    'a' to listOf("á", "à", "â", "ä", "ã", "ā"), 's' to listOf("ß"), 'c' to listOf("ç"),
+    'n' to listOf("ñ"),
+)
+private val PERIOD_ALTERNATES = listOf(".", ",", "?", "!", "'", "\"", ":", ";", "-", "…")
 
 /** Shift key: off, one capital letter, or caps lock (tap cycles through them). */
 enum class Shift { Off, On, Lock }
@@ -168,6 +180,10 @@ fun KeyboardUi(
     onOpenSettings: () -> Unit,
     numberPad: NumberPadKind?,
     enterLabel: String?,
+    onCursorMove: (Int) -> Unit,
+    polite: Boolean,
+    onTogglePolite: () -> Unit,
+    onExplain: () -> Unit,
 ) {
     // Which panel shows instead of the letter keys (emoji, clipboard, editing).
     var panelShown by remember { mutableStateOf(Panel.Keys) }
@@ -203,7 +219,7 @@ fun KeyboardUi(
                     (mode == Mode.Assist || practice is PracticeState.Idle) && suggestions.isNotEmpty()
                 ) SuggestionBar(suggestions, onShowTools, onSuggestion)
                 else Toolbar(sensitive || numberPad != null, mode, onMode, assist, onTranslate, onInsertChinese,
-                    practice, onStartPractice, onHint, panelShown, togglePanel, onOpenSettings,
+                    practice, onStartPractice, onHint, panelShown, togglePanel, onOpenSettings, polite, onTogglePolite, onExplain,
                     showPasteChip && !sensitive, onPasteChip)
             }
             val panel: @Composable () -> Unit = {
@@ -217,10 +233,10 @@ fun KeyboardUi(
                 when (panelShown) {
                     Panel.Keys -> if (numberPad != null)
                         NumberPad(numberPad, enterLabel, onText, onBackspace, onEnter)
-                    else Keys(page, { page = it }, shift, onShift, chinese, onToggleChinese, onText, onBackspace, onEnter, onSwitchKeyboard)
+                    else Keys(page, { page = it }, shift, onShift, chinese, onToggleChinese, onText, onBackspace, onEnter, onSwitchKeyboard, onCursorMove)
                     Panel.Emoji -> EmojiGrid(emojiTab, recentEmoji, onEmoji)
                     // No clipboard or editing panel in password fields.
-                    Panel.Clipboard -> if (sensitive) Keys(page, { page = it }, shift, onShift, chinese, onToggleChinese, onText, onBackspace, onEnter, onSwitchKeyboard)
+                    Panel.Clipboard -> if (sensitive) Keys(page, { page = it }, shift, onShift, chinese, onToggleChinese, onText, onBackspace, onEnter, onSwitchKeyboard, onCursorMove)
                         else {
                             // Newest copy first (marked "Latest"), then pinned items, then older copies.
                             val latest = clipHistory.firstOrNull()
@@ -281,6 +297,9 @@ private fun Toolbar(
     panel: Panel,
     onPanel: (Panel) -> Unit,
     onOpenSettings: () -> Unit,
+    polite: Boolean,
+    onTogglePolite: () -> Unit,
+    onExplain: () -> Unit,
     showPasteChip: Boolean,
     onPasteChip: () -> Unit,
 ) {
@@ -306,6 +325,11 @@ private fun Toolbar(
             } else when (mode) {
                 Mode.Assist -> IconPill("译", false, onClick = onTranslate)
                 Mode.Practice -> IconPill(if (practice is PracticeState.Active) "↻" else "译", false, onClick = onStartPractice)
+            }
+            if (mode == Mode.Assist && !loading) {
+                // 解 = explain a copied Chinese message; 随/敬 = casual or polite translations.
+                IconPill("解", false, onClick = onExplain)
+                IconPill(if (polite) "敬" else "随", polite, onClick = onTogglePolite)
             }
             if (mode == Mode.Assist && assist is AssistState.Result && assist.complete) Pill("Insert", accent = true, onClick = onInsertChinese)
             if (mode == Mode.Practice && practice is PracticeState.Active && !practice.done) Pill("Hint", onClick = onHint)
@@ -385,6 +409,7 @@ private fun Keys(
     onBackspace: () -> Unit,
     onEnter: () -> Unit,
     onSwitchKeyboard: () -> Unit,
+    onCursorMove: (Int) -> Unit,
 ) {
     val kb = LocalKb.current
     Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
@@ -399,7 +424,8 @@ private fun Keys(
                     )
                     row.forEach { c ->
                         val label = if (shift != Shift.Off) c.uppercase() else c.toString()
-                        Key(label, preview = true) { onText(label) }
+                        val alts = ALTERNATES[c]?.map { if (shift != Shift.Off) it.uppercase() else it }
+                        Key(label, preview = true, alternates = alts, onAlternate = onText) { onText(label) }
                     }
                     if (i == 1) Spacer1(0.5f)
                     if (i == 2) Key("⌫", 1.5f, function = true, repeat = true, onClick = onBackspace)
@@ -419,8 +445,9 @@ private fun Keys(
             Key(if (page == 0) "!#1" else "ABC", 1.4f, function = true) { onPage(if (page == 0) 1 else 0) }
             LanguageKey(chinese, onToggleChinese)
             Key(if (chinese) "，" else ",", 1f) { onText(",") }
-            Key("␣", 4.4f) { onText(" ") }
-            Key(if (chinese) "。" else ".", 1f) { onText(".") }
+            // Slide along the space bar to move the cursor.
+            Key("␣", 4.4f, onCursor = onCursorMove) { onText(" ") }
+            Key(if (chinese) "。" else ".", 1f, alternates = PERIOD_ALTERNATES, onAlternate = onText) { onText(".") }
             Key("⏎", 1.4f, function = true, onClick = onEnter)
         }
     }
@@ -483,6 +510,11 @@ internal fun RowScope.Key(
     labelColor: Color? = null,
     height: Dp = LocalKeyHeights.current.key,
     fontSize: Int? = null,
+    /** Hold the key to choose one of these (e.g. 3, é, è), sliding sideways to pick. */
+    alternates: List<String>? = null,
+    onAlternate: (String) -> Unit = {},
+    /** Space bar: slide sideways to move the cursor by this many characters. */
+    onCursor: ((Int) -> Unit)? = null,
     onClick: () -> Unit,
 ) {
     val kb = LocalKb.current
@@ -506,13 +538,62 @@ internal fun RowScope.Key(
             }
         }
     }
-    val touch = Modifier.pointerInput(Unit) {
+    // Index of the highlighted alternate while the long-press popup is open (-1 = closed).
+    var popupSel by remember { mutableStateOf(-1) }
+    val latestAlt by rememberUpdatedState(onAlternate)
+    val latestCursor by rememberUpdatedState(onCursor)
+    val touch = Modifier.pointerInput(alternates, onCursor != null) {
         awaitEachGesture {
-            awaitFirstDown(requireUnconsumed = false)
+            val down = awaitFirstDown(requireUnconsumed = false)
             pressed = true
             view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
-            latestOnClick()
-            waitForUpOrCancellation()
+            if (alternates == null && onCursor == null) {
+                // Ordinary key: type on touch-down for speed.
+                latestOnClick()
+                waitForUpOrCancellation()
+                pressed = false
+                return@awaitEachGesture
+            }
+            // Keys with a hold/slide action decide when the finger lifts.
+            val start = down.position.x
+            val startTime = down.uptimeMillis
+            val stepPx = 12.dp.toPx()      // space bar: one character per 12dp of sliding
+            val optionPx = 36.dp.toPx()    // width of one alternate in the popup
+            var dragging = false
+            var moved = 0
+            var lifted = false
+            var lastX = start
+            while (true) {
+                // Wake up regularly even if the finger doesn't move, to notice a long press.
+                val event = withTimeoutOrNull(40) { awaitPointerEvent() }
+                val change = event?.changes?.firstOrNull { it.id == down.id }
+                if (change != null && !change.pressed) { lifted = true; break }
+                if (change != null) lastX = change.position.x
+                val dx = lastX - start
+                if (latestCursor != null) {
+                    if (!dragging && kotlin.math.abs(dx) > 16.dp.toPx()) dragging = true
+                    if (dragging) {
+                        val steps = (dx / stepPx).toInt()
+                        if (steps != moved) { latestCursor?.invoke(steps - moved); moved = steps }
+                    }
+                }
+                if (alternates != null) {
+                    val held = (change?.uptimeMillis ?: android.os.SystemClock.uptimeMillis()) - startTime
+                    if (popupSel < 0 && held > 350) {
+                        popupSel = 0
+                        view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+                    }
+                    if (popupSel >= 0) popupSel = (dx / optionPx).roundToInt().coerceIn(0, alternates.lastIndex)
+                }
+                change?.consume()
+            }
+            when {
+                !lifted -> {}
+                popupSel >= 0 && alternates != null -> latestAlt(alternates[popupSel])
+                dragging -> {}
+                else -> latestOnClick()
+            }
+            popupSel = -1
             pressed = false
         }
     }
@@ -529,8 +610,32 @@ internal fun RowScope.Key(
             // Short labels (letters, symbols) big; words like "ABC" or "1/2" a bit smaller.
             val size = fontSize ?: if (label.length > 1) 17 else 22
             Text(label, fontSize = size.sp, color = labelColor ?: kb.label)
+            // Small hint of the hold-for alternate (e.g. the digit on the top row).
+            val hint = alternates?.firstOrNull()
+            if (hint != null && hint.first().isDigit()) Text(
+                hint, fontSize = 10.sp, color = kb.label.copy(alpha = 0.5f),
+                modifier = Modifier.align(Alignment.TopEnd).padding(top = 2.dp, end = 4.dp),
+            )
         }
-        if (preview && pressed) {
+        if (popupSel >= 0 && alternates != null) {
+            // Long-press popup: slide left/right to choose, lift to type it.
+            Row(
+                Modifier
+                    .align(Alignment.TopStart)
+                    .offset(y = (-52).dp)
+                    .clip(KEY_SHAPE)
+                    .background(kb.pressed),
+            ) {
+                alternates.forEachIndexed { i, a ->
+                    Box(
+                        Modifier.size(width = 36.dp, height = 46.dp)
+                            .background(if (i == popupSel) kb.accent else kb.pressed),
+                        contentAlignment = Alignment.Center,
+                    ) { Text(a, fontSize = 20.sp, color = if (i == popupSel) Color.White else kb.label) }
+                }
+            }
+        }
+        if (preview && pressed && popupSel < 0) {
             Box(
                 Modifier
                     .align(Alignment.TopCenter)
@@ -571,10 +676,18 @@ private fun AssistPanel(
                 Modifier.heightIn(max = 220.dp).verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
+                val explained = state.reply != null
                 state.result.sentences.forEachIndexed { i, sentence ->
                     // key(): remember each card's expanded state separately, reset on a new translation.
                     androidx.compose.runtime.key(state.result, i) {
-                        SentenceCard(sentence, detailsStates[sentence], whyStates[sentence], savedStates[sentence], { onExpand(sentence) }, { onWhy(sentence) }, { onSave(sentence) }, done = i < guidedDone)
+                        SentenceCard(sentence, detailsStates[sentence], whyStates[sentence], savedStates[sentence], { onExpand(sentence) }, { onWhy(sentence) }, { onSave(sentence) }, done = i < guidedDone, showEnglish = explained)
+                    }
+                }
+                // After explaining a received message: a suggested reply (Insert types it).
+                state.reply?.let { reply ->
+                    Text("Suggested reply", fontSize = 12.sp, color = LocalKb.current.label.copy(alpha = 0.6f))
+                    androidx.compose.runtime.key(reply) {
+                        SentenceCard(reply, detailsStates[reply], whyStates[reply], savedStates[reply], { onExpand(reply) }, { onWhy(reply) }, { onSave(reply) }, showEnglish = true)
                     }
                 }
             }
@@ -597,6 +710,7 @@ private fun SentenceCard(
     onWhy: () -> Unit,
     onSave: () -> Unit,
     done: Boolean = false,
+    showEnglish: Boolean = false,
 ) {
     var expanded by remember { mutableStateOf(false) }
     Column(
@@ -619,6 +733,8 @@ private fun SentenceCard(
                     if (done) Text("  ✓", fontSize = 20.sp, color = androidx.compose.ui.graphics.Color(0xFF34C759))
                 }
                 Text(sentence.pinyin, fontSize = 15.sp, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Medium)
+                // For explained (received) messages, also show what it means.
+                if (showEnglish) Text(sentence.en, fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f))
             }
             // Small icon buttons so the sentence gets most of the width.
             // 🔊 reads the Chinese aloud; ☆/★ saves the sentence.

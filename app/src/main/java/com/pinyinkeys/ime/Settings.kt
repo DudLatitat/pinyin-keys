@@ -65,6 +65,11 @@ class Settings(context: Context) {
         get() = prefs.getString("next_words", "") ?: ""
         set(v) = prefs.edit().putString("next_words", v).apply()
 
+        /** Translate in a polite tone (elders, strangers) instead of casual. */
+    var polite: Boolean
+        get() = prefs.getBoolean("polite", false)
+        set(v) = prefs.edit().putBoolean("polite", v).apply()
+
         /** Recently used emoji, newest first. */
     var recentEmoji: List<String>
         get() = readList("recent_emoji")

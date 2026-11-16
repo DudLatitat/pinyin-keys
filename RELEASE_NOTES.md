@@ -3,6 +3,14 @@ A personal Android keyboard that shows Chinese and pinyin for the English you ty
 **Install:** download `pinyin-keys-<version>.apk` below, open it on the phone, then turn on
 Pinyin Keys in the system keyboard settings. Add your Claude API key in the Pinyin Keys app.
 
+## New in 1.1.0
+- 解 Explain: copy a Chinese message, tap 解 to see each sentence with pinyin and English,
+  plus a suggested reply (Insert types it, or tap 中 to type it yourself).
+- 随/敬: switch translations between casual and polite (for elders and strangers).
+- Slide along the space bar to move the cursor.
+- Hold a key for more: top-row digits, accents (é, ü, ñ...), and punctuation on the "." key.
+- Phrasebook grew to ~430 common sentences that translate instantly, offline.
+
 ## New in 1.0.13
 - Top bar buttons are evenly spaced.
 - Hold an emoji to keep typing it.

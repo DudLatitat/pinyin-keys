@@ -62,6 +62,8 @@ class PinyinKeysService : InputMethodService(),
     private val numberPad = mutableStateOf<NumberPadKind?>(null)
     /** Label for the enter key, from what the app asks for (Done, Next, Go, Send...). */
     private val enterLabel = mutableStateOf<String?>(null)
+    /** Polite tone for translations (toolbar 随/敬). */
+    private val polite = mutableStateOf(false)
 
     /** What the Assist panel shows. Compose redraws whenever this changes. */
     private val assistState = mutableStateOf<AssistState>(AssistState.Idle)
@@ -142,6 +144,7 @@ class PinyinKeysService : InputMethodService(),
             val s = withContext(Dispatchers.IO) { Settings(this@PinyinKeysService) }
             recentEmoji.value = s.recentEmoji
             pinnedClips.value = s.pinnedClips
+            polite.value = s.polite
             clipHistory.value = s.clipHistory
         }
         // Get told about each new copy (Android allows this for the keyboard in use).
@@ -214,6 +217,10 @@ class PinyinKeysService : InputMethodService(),
                     onOpenSettings = ::openSettings,
                     numberPad = numberPad.value,
                     enterLabel = enterLabel.value,
+                    onCursorMove = ::moveCursor,
+                    polite = polite.value,
+                    onTogglePolite = ::togglePolite,
+                    onExplain = ::explainCopied,
                 )
             }
         }
@@ -794,7 +801,7 @@ class PinyinKeysService : InputMethodService(),
         val shown = assistState.value as? AssistState.Result
         if (chinese.value && shown != null && shown.complete) {
             replaceField("")
-            guidedTarget = shown.result.sentences.map { it.hanzi }
+            guidedTarget = shown.reply?.let { listOf(it.hanzi) } ?: shown.result.sentences.map { it.hanzi }
             refreshGuided()
         } else if (!chinese.value) {
             endGuided()
@@ -918,7 +925,7 @@ class PinyinKeysService : InputMethodService(),
             assistState.value = try {
                 // Dispatchers.IO: network must not run on the main (UI) thread.
                 val result = withContext(Dispatchers.IO) {
-                    Translator(this@PinyinKeysService, service).translate(text) { i, sentence ->
+                    Translator(this@PinyinKeysService, service, polite.value).translate(text) { i, sentence ->
                         // Called on a background thread as each sentence is ready: show it right away.
                         mainHandler.post {
                             if (translateJob != job || job?.isActive != true) return@post
@@ -1045,6 +1052,58 @@ class PinyinKeysService : InputMethodService(),
         }
     }
 
+    /** Space-bar slide: move the cursor [steps] characters (negative = left). */
+    private fun moveCursor(steps: Int) {
+        val ic = currentInputConnection ?: return
+        if (composing.value.isNotEmpty()) { ic.finishComposingText(); setComposing("") }
+        currentWord = ""
+        suggestions.value = emptyList()
+        val code = if (steps < 0) KeyEvent.KEYCODE_DPAD_LEFT else KeyEvent.KEYCODE_DPAD_RIGHT
+        repeat(kotlin.math.abs(steps)) {
+            ic.sendKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, code))
+            ic.sendKeyEvent(KeyEvent(KeyEvent.ACTION_UP, code))
+        }
+    }
+
+    private fun togglePolite() {
+        polite.value = !polite.value
+        val v = polite.value
+        lifecycleScope.launch(Dispatchers.IO) { Settings(this@PinyinKeysService).polite = v }
+        toast(if (v) "Polite tone (敬) for translations" else "Casual tone (随) for translations")
+    }
+
+    /**
+     * 解: explain a Chinese message you copied (from a chat). Reads the clipboard because
+     * you tapped the button, sends that text to the API, and shows sentence cards with
+     * pinyin and English plus a suggested reply that Insert can type for you.
+     */
+    private fun explainCopied() {
+        if (sensitiveField.value) return
+        val text = latestClip?.takeIf { !Clips.isImage(it) } ?: readClipboard()
+        if (text.isNullOrBlank() || onlyHan(text).isEmpty()) {
+            assistState.value = AssistState.Error("Copy a Chinese message first, then tap 解.")
+            return
+        }
+        val service = Settings(this).translationService()
+            ?: run { assistState.value = AssistState.Error("Add your API key in the Pinyin Keys app."); return }
+        translateJob?.cancel()
+        detailsStates.clear(); whyStates.clear(); savedStates.clear()
+        assistState.value = AssistState.Loading
+        translateJob = lifecycleScope.launch {
+            assistState.value = try {
+                val ex = withContext(Dispatchers.IO) { service.explainChinese(text.take(2000)) }
+                AssistState.Result(
+                    com.pinyinkeys.ime.translate.TranslationResult(ex.sentences), complete = true, reply = ex.reply,
+                )
+            } catch (e: TranslationException) {
+                AssistState.Error(e.userMessage)
+            } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                AssistState.Error("Couldn't explain (E4: ${errorKind(e)}). Try again.")
+            }
+        }
+    }
+
     // --- Practice mode ---
 
     private fun setMode(m: Mode) {
@@ -1073,7 +1132,7 @@ class PinyinKeysService : InputMethodService(),
             val result = onDemand("Couldn't start practice. Try again.") { cache, service ->
                 strictTones = Settings(this@PinyinKeysService).strictTones
                 val svc = service()
-                val sentences = Translator(this@PinyinKeysService, svc).translate(text)
+                val sentences = Translator(this@PinyinKeysService, svc, polite.value).translate(text)
                 val units = sentences.map { s ->
                     val d = cache.getDetails(s) ?: svc.details(s).also { cache.putDetails(s, it) }
                     Practice.buildUnits(s, d)
@@ -1149,6 +1208,12 @@ class PinyinKeysService : InputMethodService(),
     private fun insertChinese() {
         val state = assistState.value as? AssistState.Result ?: return
         if (!state.complete) return
+        // After explaining a received message, Insert types the suggested reply.
+        state.reply?.let { replyWith ->
+            replaceField(replyWith.hanzi)
+            assistState.value = AssistState.Idle
+            return
+        }
         val result = state.result
         replaceField(result.sentences.joinToString("") { it.hanzi })
         assistState.value = AssistState.Idle

@@ -37,7 +37,8 @@ class SentenceCache(context: Context) {
     /** A sentence translated before (keyed by its normalized English). */
     fun getTranslation(english: String): Sentence? =
         prefs.getString("tr:" + hash(Translator.normalize(english)), null)?.let {
-            runCatching { json.decodeFromString(Sentence.serializer(), it) }.getOrNull()?.copy(en = english)
+            runCatching { json.decodeFromString(Sentence.serializer(), it) }.getOrNull()
+                ?.let { cached -> cached.copy(en = english.removePrefix("[polite] ")) }
         }
 
     fun putTranslation(english: String, s: Sentence) =

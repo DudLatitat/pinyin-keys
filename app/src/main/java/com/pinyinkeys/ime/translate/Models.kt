@@ -37,6 +37,10 @@ data class LineResult(val hanzi: String, val pinyin: String)
 @Serializable
 data class LineResults(val sentences: List<LineResult>)
 
+/** A received message explained: its sentences (hanzi, pinyin, English) and a reply. */
+@Serializable
+data class Explained(val sentences: List<Sentence>, val reply: Sentence)
+
 @Serializable
 data class WhyResult(val why: String)
 

@@ -24,11 +24,22 @@ class ClaudeTranslationService(
 
     private val json = Json { ignoreUnknownKeys = true }
 
-    override fun translateLines(lines: List<String>, onLine: (Int, Sentence) -> Unit): List<Sentence> {
+    override fun explainChinese(message: String): Explained {
+        val text = call(Prompts.EXPLAIN_SYSTEM, message, Prompts.EXPLAIN_SCHEMA, maxTokens = 4000)
+        return try {
+            json.decodeFromString(Explained.serializer(), text)
+        } catch (e: Exception) {
+            Log.w(TAG, "Bad JSON from API: ${e.javaClass.simpleName}")
+            throw TranslationException("Couldn't explain (E1: unexpected reply shape). Try again.", e)
+        }
+    }
+
+    override fun translateLines(lines: List<String>, polite: Boolean, onLine: (Int, Sentence) -> Unit): List<Sentence> {
         // Stream the reply and hand over each line as soon as it's complete.
         val scanner = JsonItemScanner()
         var index = 0
-        val text = call(Prompts.TRANSLATE_SYSTEM, Prompts.numberedLines(lines), Prompts.TRANSLATE_SCHEMA, maxTokens = 8000) { delta ->
+        val system = if (polite) Prompts.TRANSLATE_SYSTEM + "\n\n" + Prompts.POLITE_NOTE else Prompts.TRANSLATE_SYSTEM
+        val text = call(system, Prompts.numberedLines(lines), Prompts.TRANSLATE_SCHEMA, maxTokens = 8000) { delta ->
             scanner.append(delta).forEach { item ->
                 val r = runCatching { json.decodeFromString(LineResult.serializer(), item) }.getOrNull()
                 if (r != null && index < lines.size) onLine(index, Sentence(lines[index], r.hanzi, r.pinyin))
