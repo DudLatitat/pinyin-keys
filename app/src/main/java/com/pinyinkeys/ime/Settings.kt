@@ -70,6 +70,11 @@ class Settings(context: Context) {
         get() = prefs.getBoolean("polite", false)
         set(v) = prefs.edit().putBoolean("polite", v).apply()
 
+        /** Keyboard theme name (see THEMES), or "System" to follow the phone's dark mode. */
+    var theme: String
+        get() = prefs.getString("theme", "System") ?: "System"
+        set(v) = prefs.edit().putString("theme", v).apply()
+
         /** Recently used emoji, newest first. */
     var recentEmoji: List<String>
         get() = readList("recent_emoji")

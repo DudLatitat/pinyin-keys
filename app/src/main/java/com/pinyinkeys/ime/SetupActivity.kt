@@ -24,6 +24,15 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.Switch
+import androidx.compose.material3.RadioButton
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.layout.Row
 import androidx.compose.ui.Alignment
 import androidx.compose.material3.darkColorScheme
@@ -125,6 +134,33 @@ class SetupActivity : ComponentActivity() {
                             Text("Require tone numbers (e.g. ni3)", Modifier.weight(1f))
                             Switch(checked = strict, onCheckedChange = { strict = it; settings.strictTones = it })
                         }
+                        HorizontalDivider()
+                        Text("Theme", style = MaterialTheme.typography.titleMedium)
+                        var theme by remember { mutableStateOf(settings.theme) }
+                        // Each choice shows a little key in that theme's colors.
+                        (listOf("System") + THEMES.keys).forEach { name ->
+                            Row(
+                                Modifier.fillMaxWidth().clickable { theme = name; settings.theme = name }.padding(vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                RadioButton(selected = theme == name, onClick = { theme = name; settings.theme = name })
+                                Text(name, Modifier.weight(1f))
+                                THEMES[name]?.let { kb ->
+                                    Box(
+                                        Modifier.size(width = 64.dp, height = 32.dp).clip(RoundedCornerShape(6.dp))
+                                            .background(kb.background).padding(4.dp),
+                                        contentAlignment = Alignment.Center,
+                                    ) {
+                                        Box(
+                                            Modifier.fillMaxSize().clip(RoundedCornerShape(4.dp)).background(kb.key),
+                                            contentAlignment = Alignment.Center,
+                                        ) { Text("A", color = kb.label, fontSize = 13.sp) }
+                                    }
+                                }
+                            }
+                        }
+                        Text("Takes effect the next time the keyboard opens.", style = MaterialTheme.typography.bodySmall)
+
                         HorizontalDivider()
                         Text("Typing", style = MaterialTheme.typography.titleMedium)
                         var autoFix by remember { mutableStateOf(settings.autocorrect) }

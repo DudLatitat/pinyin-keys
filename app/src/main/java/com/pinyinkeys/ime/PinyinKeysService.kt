@@ -64,6 +64,7 @@ class PinyinKeysService : InputMethodService(),
     private val enterLabel = mutableStateOf<String?>(null)
     /** Polite tone for translations (toolbar 随/敬). */
     private val polite = mutableStateOf(false)
+    private val theme = mutableStateOf("System")
 
     /** What the Assist panel shows. Compose redraws whenever this changes. */
     private val assistState = mutableStateOf<AssistState>(AssistState.Idle)
@@ -221,6 +222,7 @@ class PinyinKeysService : InputMethodService(),
                     polite = polite.value,
                     onTogglePolite = ::togglePolite,
                     onExplain = ::explainCopied,
+                    theme = theme.value,
                 )
             }
         }
@@ -245,6 +247,9 @@ class PinyinKeysService : InputMethodService(),
         updateAutoCaps()
         checkRecentCopy()
         checkRecentScreenshot()
+        lifecycleScope.launch {
+            theme.value = withContext(Dispatchers.IO) { Settings(this@PinyinKeysService).theme }
+        }
         warmUpConnection()
         resetWord()
         if (english == null) lifecycleScope.launch {

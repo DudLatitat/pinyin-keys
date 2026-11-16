@@ -3,6 +3,11 @@ A personal Android keyboard that shows Chinese and pinyin for the English you ty
 **Install:** download `pinyin-keys-<version>.apk` below, open it on the phone, then turn on
 Pinyin Keys in the system keyboard settings. Add your Claude API key in the Pinyin Keys app.
 
+## New in 1.1.1
+- Themes: System, Dark, Light, Black (AMOLED), Midnight, Sakura, Jade. Pick one in the
+  Pinyin Keys app under Theme.
+- Removed the small digit hints on the top letter row (holding a letter still gives its digit).
+
 ## New in 1.1.0
 - 解 Explain: copy a Chinese message, tap 解 to see each sentence with pinyin and English,
   plus a suggested reply (Insert types it, or tap 中 to type it yourself).

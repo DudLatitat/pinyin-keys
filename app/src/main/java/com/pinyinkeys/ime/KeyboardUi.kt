@@ -92,6 +92,8 @@ data class KbColors(
     val pressed: Color,
     val label: Color,
     val accent: Color,
+    /** Dark theme? (decides the colors used for text on cards). */
+    val dark: Boolean = true,
 )
 
 private val DarkKb = KbColors(
@@ -102,8 +104,35 @@ private val DarkKb = KbColors(
 private val LightKb = KbColors(
     background = Color(0xFFE8E9ED), toolbar = Color(0xFFF4F4F6), key = Color(0xFFFFFFFF),
     functionKey = Color(0xFFC6CAD1), pressed = Color(0xFFB0B4BB), label = Color(0xFF111111),
-    accent = Color(0xFF2F6BFF),
+    accent = Color(0xFF2F6BFF), dark = false,
 )
+
+/** Keyboard themes, chosen in the Pinyin Keys app ("System" follows the phone's dark mode). */
+val THEMES: Map<String, KbColors> = linkedMapOf(
+    "Dark" to DarkKb,
+    "Light" to LightKb,
+    "Black" to KbColors(
+        background = Color(0xFF000000), toolbar = Color(0xFF000000), key = Color(0xFF1C1C1E),
+        functionKey = Color(0xFF0E0E10), pressed = Color(0xFF3A3A3C), label = Color(0xFFEDEDED),
+        accent = Color(0xFF8AB4FF),
+    ),
+    "Midnight" to KbColors(
+        background = Color(0xFF0B1426), toolbar = Color(0xFF111E36), key = Color(0xFF1E2D4D),
+        functionKey = Color(0xFF14213B), pressed = Color(0xFF2E4370), label = Color(0xFFE6EEFF),
+        accent = Color(0xFF6EA8FF),
+    ),
+    "Sakura" to KbColors(
+        background = Color(0xFFFBE9EF), toolbar = Color(0xFFFDF2F6), key = Color(0xFFFFFFFF),
+        functionKey = Color(0xFFF4C7D6), pressed = Color(0xFFEBAFC3), label = Color(0xFF4A2030),
+        accent = Color(0xFFD9467A), dark = false,
+    ),
+    "Jade" to KbColors(
+        background = Color(0xFF0D1F1A), toolbar = Color(0xFF12291F), key = Color(0xFF1E3B30),
+        functionKey = Color(0xFF152E25), pressed = Color(0xFF2C5546), label = Color(0xFFE5F4EE),
+        accent = Color(0xFF4FD1A1),
+    ),
+)
+
 internal val LocalKb = staticCompositionLocalOf { DarkKb }
 
 /** What holding a key offers (first = the small hint shown on the key). */
@@ -184,6 +213,7 @@ fun KeyboardUi(
     polite: Boolean,
     onTogglePolite: () -> Unit,
     onExplain: () -> Unit,
+    theme: String,
 ) {
     // Which panel shows instead of the letter keys (emoji, clipboard, editing).
     var panelShown by remember { mutableStateOf(Panel.Keys) }
@@ -192,9 +222,9 @@ fun KeyboardUi(
 
     // 0 = letters, 1 and 2 = symbol pages.
     var page by remember { mutableStateOf(0) }
-    val dark = isSystemInDarkTheme()
-    val colors = if (dark) darkColorScheme() else lightColorScheme()
-    val kb = if (dark) DarkKb else LightKb
+    val kb = THEMES[theme] ?: if (isSystemInDarkTheme()) DarkKb else LightKb
+    // Card text colors follow the theme; pinyin uses the theme's accent color.
+    val colors = if (kb.dark) darkColorScheme(primary = kb.accent) else lightColorScheme(primary = kb.accent)
 
     MaterialTheme(colorScheme = colors) {
       CompositionLocalProvider(LocalKb provides kb, LocalSpeak provides onSpeak) {
@@ -610,12 +640,6 @@ internal fun RowScope.Key(
             // Short labels (letters, symbols) big; words like "ABC" or "1/2" a bit smaller.
             val size = fontSize ?: if (label.length > 1) 17 else 22
             Text(label, fontSize = size.sp, color = labelColor ?: kb.label)
-            // Small hint of the hold-for alternate (e.g. the digit on the top row).
-            val hint = alternates?.firstOrNull()
-            if (hint != null && hint.first().isDigit()) Text(
-                hint, fontSize = 10.sp, color = kb.label.copy(alpha = 0.5f),
-                modifier = Modifier.align(Alignment.TopEnd).padding(top = 2.dp, end = 4.dp),
-            )
         }
         if (popupSel >= 0 && alternates != null) {
             // Long-press popup: slide left/right to choose, lift to type it.
