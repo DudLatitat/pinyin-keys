@@ -628,20 +628,16 @@ private fun SentenceCard(
                 }
                 Text(sentence.pinyin, fontSize = 15.sp, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Medium)
             }
-            // 🔊 reads the Chinese aloud.
+            // Small icon buttons so the sentence gets most of the width.
+            // 🔊 reads the Chinese aloud; ☆/★ saves the sentence.
             val speak = LocalSpeak.current
-            TextButton(onClick = { speak(sentence.hanzi) }) { Text("🔊", fontSize = 18.sp) }
-            // ⧉ copies the pinyin (the keyboard stays open).
-            val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
-            TextButton(onClick = {
-                clipboard.setText(androidx.compose.ui.text.AnnotatedString(sentence.pinyin))
-            }) { Text("⧉", fontSize = 20.sp) }
-            // Bookmark: ☆ not saved, ★ saved. Its own tap target, so it doesn't open the card.
-            when (saved) {
-                Load.Loading -> CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
-                else -> TextButton(onClick = onSave, enabled = saved !is Load.Loaded) {
-                    Text(if (saved is Load.Loaded) "★" else "☆", fontSize = 22.sp)
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                SmallIcon("🔊") { speak(sentence.hanzi) }
+                when (saved) {
+                    Load.Loading -> CircularProgressIndicator(Modifier.padding(6.dp).size(16.dp), strokeWidth = 2.dp)
+                    else -> SmallIcon(if (saved is Load.Loaded) "★" else "☆", enabled = saved !is Load.Loaded, onClick = onSave)
                 }
+            }
             }
         }
         if (saved is Load.Error) Text(saved.message, fontSize = 13.sp, color = MaterialTheme.colorScheme.error)
@@ -840,4 +836,13 @@ private fun CorrectionBar(correction: Pair<String, String>, onUndo: () -> Unit) 
             }
         }
     }
+}
+
+/** A compact tappable icon (smaller than a standard button). */
+@Composable
+private fun SmallIcon(icon: String, enabled: Boolean = true, onClick: () -> Unit) {
+    Box(
+        Modifier.size(30.dp).clip(RoundedCornerShape(15.dp)).clickable(enabled = enabled, onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) { Text(icon, fontSize = 15.sp, color = MaterialTheme.colorScheme.primary) }
 }
