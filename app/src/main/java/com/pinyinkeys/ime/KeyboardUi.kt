@@ -213,6 +213,8 @@ fun KeyboardUi(
     onCursorMove: (Int) -> Unit,
     onReplaceLast: (String) -> Unit,
     onUndoSpace: () -> Unit,
+    showNumberRow: Boolean,
+    keyScale: Float,
     tone: com.pinyinkeys.ime.translate.Tone,
     onTogglePolite: () -> Unit,
     onExplain: () -> Unit,
@@ -266,10 +268,10 @@ fun KeyboardUi(
                 when (panelShown) {
                     Panel.Keys -> if (numberPad != null)
                         NumberPad(numberPad, enterLabel, onText, onBackspace, onEnter)
-                    else Keys(page, { page = it }, shift, onShift, chinese, onToggleChinese, onText, onBackspace, onEnter, onSwitchKeyboard, onCursorMove, onReplaceLast, onUndoSpace)
+                    else Keys(page, { page = it }, shift, onShift, chinese, onToggleChinese, onText, onBackspace, onEnter, onSwitchKeyboard, onCursorMove, onReplaceLast, onUndoSpace, showNumberRow)
                     Panel.Emoji -> EmojiGrid(emojiTab, recentEmoji, onEmoji)
                     // No clipboard or editing panel in password fields.
-                    Panel.Clipboard -> if (sensitive) Keys(page, { page = it }, shift, onShift, chinese, onToggleChinese, onText, onBackspace, onEnter, onSwitchKeyboard, onCursorMove, onReplaceLast, onUndoSpace)
+                    Panel.Clipboard -> if (sensitive) Keys(page, { page = it }, shift, onShift, chinese, onToggleChinese, onText, onBackspace, onEnter, onSwitchKeyboard, onCursorMove, onReplaceLast, onUndoSpace, showNumberRow)
                         else {
                             // Newest copy first (marked "Latest"), then pinned items, then older copies.
                             val latest = clipHistory.firstOrNull()
@@ -294,7 +296,9 @@ fun KeyboardUi(
                 // keys centred at about 88% of the width and make them a little taller.
                 val wide = maxWidth >= 600.dp
                 val contentWidth = if (wide) maxWidth * 0.88f else minOf(maxWidth, 720.dp)
-                CompositionLocalProvider(LocalKeyHeights provides if (wide) WideKeys else NormalKeys) {
+                val base = if (wide) WideKeys else NormalKeys
+                val heights = KeyHeights(base.key * keyScale, base.number * keyScale)
+                CompositionLocalProvider(LocalKeyHeights provides heights) {
                     Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
                         toolbar()
                         Column(
@@ -445,6 +449,7 @@ private fun Keys(
     onCursorMove: (Int) -> Unit,
     onReplaceLast: (String) -> Unit,
     onUndoSpace: () -> Unit,
+    showNumberRow: Boolean,
 ) {
     val kb = LocalKb.current
     // Briefly show a big "中" or "EN" over the keys after switching language.
@@ -457,8 +462,8 @@ private fun Keys(
         flash = null
     }
     Box {
-    Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
-        KeyRow { NUMBER_ROW.forEach { c -> Key(c.toString(), preview = true, height = LocalKeyHeights.current.number, fontSize = 19) { onText(c.toString()) } } }
+    Column {
+        if (showNumberRow) KeyRow { NUMBER_ROW.forEach { c -> Key(c.toString(), preview = true, height = LocalKeyHeights.current.number, fontSize = 19) { onText(c.toString()) } } }
         if (page == 0) {
             LETTER_ROWS.forEachIndexed { i, row ->
                 KeyRow {
@@ -515,8 +520,13 @@ private fun Keys(
 
 @Composable
 private fun KeyRow(content: @Composable RowScope.() -> Unit) {
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp), content = content)
+    // No spacing here: each key's cell already includes its share of the gap.
+    Row(Modifier.fillMaxWidth(), content = content)
 }
+
+/** Visual gaps between keys (part of each key's touch area). */
+internal val KEY_GAP_H = 6.dp
+internal val KEY_GAP_V = 7.dp
 
 /** "中/En" key: the active language is drawn brighter. */
 @Composable
@@ -526,14 +536,15 @@ private fun RowScope.LanguageKey(chinese: Boolean, onClick: () -> Unit) {
     Box(
         Modifier
             .weight(1f)
-            .height(LocalKeyHeights.current.key)
-            .clip(KEY_SHAPE)
-            // Lit up in the accent color while typing Chinese, so the mode is obvious.
-            .background(if (chinese) kb.accent else kb.functionKey)
-            .clickable {
+            .height(LocalKeyHeights.current.key + KEY_GAP_V)
+            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {
                 view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
                 onClick()
-            },
+            }
+            .padding(horizontal = KEY_GAP_H / 2, vertical = KEY_GAP_V / 2)
+            .clip(KEY_SHAPE)
+            // Lit up in the accent color while typing Chinese, so the mode is obvious.
+            .background(if (chinese) kb.accent else kb.functionKey),
     ) {
         val on = if (chinese) Color.White else kb.label
         val off = (if (chinese) Color.White else kb.label).copy(alpha = 0.45f)
@@ -664,15 +675,17 @@ internal fun RowScope.Key(
         }
     }
     // zIndex: draw a pressed key (and its preview) on top of its neighbours.
-    Box(Modifier.weight(weight).height(height).zIndex(if (pressed) 1f else 0f)) {
+    // The touch area is the whole cell, including the gap around the drawn key, so a tap
+    // that lands slightly off still hits the nearest key (no dead space between keys).
+    Box(Modifier.weight(weight).height(height + KEY_GAP_V).zIndex(if (pressed) 1f else 0f).then(touch)) {
         Box(
             Modifier
                 .matchParentSize()
+                .padding(horizontal = KEY_GAP_H / 2, vertical = KEY_GAP_V / 2)
                 // Pressed keys shrink a little and spring back.
                 .graphicsLayer { scaleX = pressScale; scaleY = pressScale }
                 .clip(KEY_SHAPE)
-                .background(if (pressed) kb.pressed else if (function) kb.functionKey else kb.key)
-                .then(touch),
+                .background(if (pressed) kb.pressed else if (function) kb.functionKey else kb.key),
             contentAlignment = Alignment.Center,
         ) {
             // Short labels (letters, symbols) big; words like "ABC" or "1/2" a bit smaller.

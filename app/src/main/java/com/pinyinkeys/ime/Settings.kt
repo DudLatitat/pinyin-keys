@@ -76,7 +76,17 @@ class Settings(context: Context) {
         get() = prefs.getString("theme", "System") ?: "System"
         set(v) = prefs.edit().putString("theme", v).apply()
 
-        /** Recently used emoji, newest first. */
+        /** Key height: 1.0 normal, 1.12 tall, 1.25 extra tall. */
+    var keyScale: Float
+        get() = prefs.getFloat("key_scale", 1f)
+        set(v) = prefs.edit().putFloat("key_scale", v).apply()
+
+    /** Show the 1-0 number row above the letters. */
+    var numberRow: Boolean
+        get() = prefs.getBoolean("number_row", true)
+        set(v) = prefs.edit().putBoolean("number_row", v).apply()
+
+    /** Recently used emoji, newest first. */
     var recentEmoji: List<String>
         get() = readList("recent_emoji")
         set(v) = writeList("recent_emoji", v)

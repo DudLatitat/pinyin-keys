@@ -3,6 +3,10 @@ A personal Android keyboard that shows Chinese and pinyin for the English you ty
 **Install:** download `pinyin-keys-<version>.apk` below, open it on the phone, then turn on
 Pinyin Keys in the system keyboard settings. Add your Claude API key in the Pinyin Keys app.
 
+## New in 1.1.6
+- Fewer missed taps: the gaps between keys now count as part of the nearest key.
+- Settings: key height (Normal / Tall / Extra tall) and a switch to hide the number row.
+
 ## New in 1.1.5
 - Fast typing is more accurate: every key now types the instant it's touched, so quick
   overlapping taps no longer come out in the wrong order ("teh"). Holding a key still

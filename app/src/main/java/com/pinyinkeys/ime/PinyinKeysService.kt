@@ -65,6 +65,8 @@ class PinyinKeysService : InputMethodService(),
     /** Polite tone for translations (toolbar 随/敬). */
     private val tone = mutableStateOf(com.pinyinkeys.ime.translate.Tone.Casual)
     private val theme = mutableStateOf("System")
+    private val numberRow = mutableStateOf(true)
+    private val keyScale = mutableStateOf(1f)
 
     /** What the Assist panel shows. Compose redraws whenever this changes. */
     private val assistState = mutableStateOf<AssistState>(AssistState.Idle)
@@ -221,6 +223,8 @@ class PinyinKeysService : InputMethodService(),
                     onCursorMove = ::moveCursor,
                     onReplaceLast = ::replaceLastChar,
                     onUndoSpace = ::undoSpace,
+                    showNumberRow = numberRow.value,
+                    keyScale = keyScale.value,
                     tone = tone.value,
                     onTogglePolite = ::togglePolite,
                     onExplain = ::explainCopied,
@@ -250,7 +254,10 @@ class PinyinKeysService : InputMethodService(),
         checkRecentCopy()
         checkRecentScreenshot()
         lifecycleScope.launch {
-            theme.value = withContext(Dispatchers.IO) { Settings(this@PinyinKeysService).theme }
+            val s = withContext(Dispatchers.IO) { Settings(this@PinyinKeysService) }
+            theme.value = s.theme
+            numberRow.value = s.numberRow
+            keyScale.value = s.keyScale
         }
         warmUpConnection()
         resetWord()

@@ -172,6 +172,22 @@ class SetupActivity : ComponentActivity() {
                             "Backspace right after a correction puts back what you typed.",
                             style = MaterialTheme.typography.bodySmall,
                         )
+                        var numRow by remember { mutableStateOf(settings.numberRow) }
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("Number row above the letters", Modifier.weight(1f))
+                            Switch(checked = numRow, onCheckedChange = { numRow = it; settings.numberRow = it })
+                        }
+                        Text("Key height", Modifier.padding(top = 4.dp))
+                        var scale by remember { mutableStateOf(settings.keyScale) }
+                        listOf(1f to "Normal", 1.12f to "Tall", 1.25f to "Extra tall").forEach { (v, name) ->
+                            Row(
+                                Modifier.fillMaxWidth().clickable { scale = v; settings.keyScale = v },
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                RadioButton(selected = scale == v, onClick = { scale = v; settings.keyScale = v })
+                                Text(name)
+                            }
+                        }
                         HorizontalDivider()
                         Text("Clipboard", style = MaterialTheme.typography.titleMedium)
                         var shots by remember {

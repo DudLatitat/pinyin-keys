@@ -44,8 +44,8 @@ fun NumberPad(
     onBackspace: () -> Unit,
     onEnter: () -> Unit,
 ) {
-    val gap = 8.dp
-    val rowHeight = (PANEL_HEIGHT - gap * 3) / 4
+    val gap = 0.dp  // keys include their own gaps (see KEY_GAP_V)
+    val rowHeight = PANEL_HEIGHT / 4 - KEY_GAP_V
     // Bottom-left/right slots depend on what the field accepts.
     val bottomLeft = when { kind.phone -> "*"; kind.signed -> "-"; else -> null }
     val bottomRight = when { kind.phone -> "#"; kind.decimal -> ","; else -> null }
@@ -82,7 +82,7 @@ fun NumberPad(
 
 @Composable
 private fun PadRow(gap: androidx.compose.ui.unit.Dp, content: @Composable RowScope.() -> Unit) {
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(gap), content = content)
+    Row(Modifier.fillMaxWidth(), content = content)
 }
 
 /** A function-coloured key, or an empty dark slot when this field doesn't need it. */
@@ -94,8 +94,7 @@ private fun RowScope.SlotKey(
     label: String? = null,
 ) {
     if (text != null) Key(label ?: text, height = height, function = true) { onText(text) }
-    else Box(
-        Modifier.weight(1f).height(height).clip(RoundedCornerShape(6.dp))
-            .background(LocalKb.current.functionKey)
-    )
+    else Box(Modifier.weight(1f).height(height + KEY_GAP_V).padding(horizontal = KEY_GAP_H / 2, vertical = KEY_GAP_V / 2)) {
+        Box(Modifier.matchParentSize().clip(RoundedCornerShape(6.dp)).background(LocalKb.current.functionKey))
+    }
 }
