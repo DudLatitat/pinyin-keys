@@ -285,39 +285,31 @@ private fun Toolbar(
     onPasteChip: () -> Unit,
 ) {
     val kb = LocalKb.current
+    val loading = assist is AssistState.Loading || practice is PracticeState.Loading ||
+        (assist is AssistState.Result && !assist.complete)
+    // All buttons evenly spaced across the bar, like a standard keyboard's tool row.
     Row(
         Modifier.fillMaxWidth().height(44.dp).background(kb.toolbar).padding(horizontal = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        horizontalArrangement = Arrangement.SpaceEvenly,
     ) {
-      // Left part scrolls sideways if the screen is too narrow for everything.
-      Row(
-          Modifier.weight(1f).horizontalScroll(rememberScrollState()),
-          verticalAlignment = Alignment.CenterVertically,
-          horizontalArrangement = Arrangement.spacedBy(6.dp),
-      ) {
-        // Something was just copied: offer it (the text is read only when tapped).
+        // Something was just copied: offer it.
         if (showPasteChip) IconPill("📋", true, onClick = onPasteChip)
         if (!sensitive) {
-            // Tap to switch between Assist and Practice.
             // 助 = Assist (help), 练 = Practice. Tap to switch.
             IconPill(if (mode == Mode.Assist) "助" else "练", true) {
                 onMode(if (mode == Mode.Assist) Mode.Practice else Mode.Assist)
             }
-            val loading = assist is AssistState.Loading || practice is PracticeState.Loading ||
-                (assist is AssistState.Result && !assist.complete)
-            when (mode) {
-                // 译 = translate.
-                Mode.Assist -> IconPill("译", false, enabled = !loading, onClick = onTranslate)
-                Mode.Practice -> IconPill(if (practice is PracticeState.Active) "↻" else "译", false,
-                    enabled = !loading, onClick = onStartPractice)
+            // 译 = translate (a spinner replaces it while working).
+            if (loading) Box(Modifier.size(34.dp), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = kb.accent)
+            } else when (mode) {
+                Mode.Assist -> IconPill("译", false, onClick = onTranslate)
+                Mode.Practice -> IconPill(if (practice is PracticeState.Active) "↻" else "译", false, onClick = onStartPractice)
             }
-            if (loading) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = kb.accent)
             if (mode == Mode.Assist && assist is AssistState.Result && assist.complete) Pill("Insert", accent = true, onClick = onInsertChinese)
             if (mode == Mode.Practice && practice is PracticeState.Active && !practice.done) Pill("Hint", onClick = onHint)
         }
-      }
-        // Icon buttons, like a standard keyboard's tool row.
         IconPill("😊", panel == Panel.Emoji) { onPanel(Panel.Emoji) }
         if (!sensitive) IconPill("📋", panel == Panel.Clipboard) { onPanel(Panel.Clipboard) }
         IconPill("✎", panel == Panel.Edit) { onPanel(Panel.Edit) }

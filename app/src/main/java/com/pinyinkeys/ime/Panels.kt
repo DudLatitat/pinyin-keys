@@ -22,6 +22,12 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
+import androidx.compose.ui.input.pointer.pointerInput
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -98,14 +104,39 @@ fun EmojiGrid(selected: Int, recent: List<String>, onEmoji: (String) -> Unit) {
                 modifier = Modifier.align(Alignment.Center))
         }
         LazyVerticalGrid(columns = GridCells.Adaptive(44.dp), modifier = Modifier.fillMaxSize()) {
-            items(items) { e ->
-                Box(
-                    Modifier.height(50.dp).clickable { onEmoji(e) },
-                    contentAlignment = Alignment.Center,
-                ) { Text(e, fontSize = 30.sp) }
-            }
+            items(items) { e -> EmojiCell(e, onEmoji) }
         }
     }
+}
+
+/**
+ * One emoji. Tap: type it once. Hold: type it, then keep repeating until you let go.
+ * Scrolling the grid cancels the press, so swiping doesn't type anything.
+ */
+@Composable
+private fun EmojiCell(e: String, onEmoji: (String) -> Unit) {
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    val latest by androidx.compose.runtime.rememberUpdatedState(onEmoji)
+    Box(
+        Modifier.height(50.dp).pointerInput(e) {
+            awaitEachGesture {
+                awaitFirstDown(requireUnconsumed = false)
+                var held = false
+                val repeat = scope.launch {
+                    delay(400)
+                    held = true
+                    while (true) {
+                        latest(e)
+                        delay(90)
+                    }
+                }
+                val up = waitForUpOrCancellation()
+                repeat.cancel()
+                if (up != null && !held) latest(e)  // a normal tap
+            }
+        },
+        contentAlignment = Alignment.Center,
+    ) { Text(e, fontSize = 30.sp) }
 }
 
 /** A round icon in a panel header; [active] draws a highlight behind it. */
