@@ -101,6 +101,22 @@ class Settings(context: Context) {
         get() = readList("user_words")
         set(v) = writeList("user_words", v)
 
+    /** Personal touch bias per letter: "a<TAB>dx<TAB>dy" lines. */
+    var touchBias: List<String>
+        get() = readList("touch_bias")
+        set(v) = writeList("touch_bias", v)
+
+    /** Bumped when the app's "learned" screen edits learned data, so the keyboard reloads it. */
+    var learnVersion: Int
+        get() = prefs.getInt("learn_version", 0)
+        set(v) = prefs.edit().putInt("learn_version", v).apply()
+
+    /** Forget everything the keyboard learned about your typing. */
+    fun forgetAllLearning() {
+        prefs.edit().remove("learned_fixes").remove("user_words").remove("next_words").remove("touch_bias")
+            .putInt("learn_version", learnVersion + 1).apply()
+    }
+
     /** Typos you've fixed by picking a suggestion ("typo<TAB>fix"). */
     var learnedFixes: List<String>
         get() = readList("learned_fixes")

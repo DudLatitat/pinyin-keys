@@ -23,6 +23,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.Switch
 import androidx.compose.material3.RadioButton
 import androidx.compose.foundation.background
@@ -188,6 +189,43 @@ class SetupActivity : ComponentActivity() {
                                 Text(name)
                             }
                         }
+                        HorizontalDivider()
+                        // What the keyboard learned from your typing; remove anything wrong.
+                        Text("What I've learned", style = MaterialTheme.typography.titleMedium)
+                        var fixes by remember { mutableStateOf(settings.learnedFixes) }
+                        var words by remember { mutableStateOf(settings.userWords) }
+                        fun bump() { settings.learnVersion = settings.learnVersion + 1 }
+                        Text("Typos I fix for you", style = MaterialTheme.typography.bodyMedium)
+                        if (fixes.isEmpty()) Text("None yet.", style = MaterialTheme.typography.bodySmall)
+                        fixes.forEach { line ->
+                            val parts = line.split('\t')
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text("${parts.getOrNull(0)} → ${parts.getOrNull(1)}", Modifier.weight(1f))
+                                TextButton(onClick = {
+                                    fixes = fixes - line; settings.learnedFixes = fixes; bump()
+                                }) { Text("✕") }
+                            }
+                        }
+                        Text("Your words (never corrected)", style = MaterialTheme.typography.bodyMedium)
+                        if (words.isEmpty()) Text("None yet.", style = MaterialTheme.typography.bodySmall)
+                        words.forEach { w ->
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(w, Modifier.weight(1f))
+                                TextButton(onClick = {
+                                    words = words - w; settings.userWords = words; bump()
+                                }) { Text("✕") }
+                            }
+                        }
+                        Button(onClick = {
+                            settings.forgetAllLearning()
+                            fixes = emptyList(); words = emptyList()
+                        }) { Text("Forget everything learned") }
+                        Text(
+                            "Also forgets your phrases and touch habits. Long-press a suggestion on the " +
+                                "keyboard to forget a single word.",
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+
                         HorizontalDivider()
                         Text("Clipboard", style = MaterialTheme.typography.titleMedium)
                         var shots by remember {

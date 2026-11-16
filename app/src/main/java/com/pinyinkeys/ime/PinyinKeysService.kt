@@ -156,6 +156,9 @@ class PinyinKeysService : InputMethodService(),
             tone.value = s.tone
             clipHistory.value = s.clipHistory
         }
+        // Load dictionaries and learned data now, so the first words already get suggestions.
+        loadLearning()
+        lifecycleScope.launch(Dispatchers.IO) { PinyinDictionary.get(this@PinyinKeysService) }
         // Get told about each new copy (Android allows this for the keyboard in use).
         getSystemService(android.content.ClipboardManager::class.java)?.addPrimaryClipChangedListener(clipListener)
         savedStateController.performRestore(null)
@@ -215,6 +218,7 @@ class PinyinKeysService : InputMethodService(),
                     pastePreview = pastePreview(),
                     suggestions = suggestions.value,
                     onSuggestion = ::pickSuggestion,
+                    onForgetSuggestion = ::forgetWord,
                     toolsForced = toolsForced.value,
                     onShowTools = { toolsForced.value = true },
                     correction = correctionNotice.value,
@@ -267,20 +271,7 @@ class PinyinKeysService : InputMethodService(),
         }
         warmUpConnection()
         resetWord()
-        if (english == null) lifecycleScope.launch {
-            english = withContext(Dispatchers.IO) {
-                EnglishDictionary.get(this@PinyinKeysService).also {
-                    val st = Settings(this@PinyinKeysService)
-                    it.userWords = st.userWords.toSet()
-                    it.learnedFixes = st.learnedFixes.mapNotNull { l ->
-                        l.split('\t').takeIf { p -> p.size == 2 }?.let { p -> p[0] to p[1] }
-                    }.toMap()
-                }
-            }
-        }
-        if (nextWords == null) lifecycleScope.launch {
-            nextWords = withContext(Dispatchers.IO) { NextWords(this@PinyinKeysService).also { it.load() } }
-        }
+        loadLearning()
         if (!mediaObserverOn && Settings(this).suggestScreenshots && Screenshots.hasPermission(this)) {
             contentResolver.registerContentObserver(
                 android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI, true, mediaObserver,
@@ -293,6 +284,11 @@ class PinyinKeysService : InputMethodService(),
     override fun onFinishInputView(finishingInput: Boolean) {
         super.onFinishInputView(finishingInput)
         nextWords?.let { nw -> lifecycleScope.launch(Dispatchers.IO) { nw.save() } }
+        if (touchBiasDirty) {
+            touchBiasDirty = false
+            val lines = english?.touchBias?.map { (c, t) -> "$c\t${t.dx}\t${t.dy}" } ?: emptyList()
+            lifecycleScope.launch(Dispatchers.IO) { Settings(this@PinyinKeysService).touchBias = lines }
+        }
         if (mediaObserverOn) {
             contentResolver.unregisterContentObserver(mediaObserver)
             mediaObserverOn = false
@@ -377,6 +373,7 @@ class PinyinKeysService : InputMethodService(),
                 wordTouches.clear(); repeat(currentWord.length) { wordTouches += null }
             }
             wordTouches += Touch(TouchTracker.dx, TouchTracker.dy)
+            if (erasedWord == null) eraseStart = null
             currentWord += c
             correctionNotice.value = null
             if (shift.value == Shift.On) shift.value = Shift.Off
@@ -388,7 +385,7 @@ class PinyinKeysService : InputMethodService(),
         // Anything else ends the word: maybe autocorrect it, then learn it.
         finishWord(ic, autocorrectOnly = c != null && (c == ' ' || c in ".,?!"))
         if (c != null && c in ".?!") sentence.clear()  // new sentence
-        suggestions.value = if (c == ' ' && suggestionsAllowed()) nextWords?.predict(sentence) ?: emptyList() else emptyList()
+        suggestions.value = if (c == ' ' && suggestionsAllowed()) predictions() else emptyList()
 
         // English: two spaces after a word become ". " (like other keyboards).
         if (text == " ") {
@@ -402,9 +399,17 @@ class PinyinKeysService : InputMethodService(),
         }
         ic.commitText(text, 1)
         if (shift.value == Shift.On) shift.value = Shift.Off
-        // A letter or digit never starts a sentence, so skip asking the app (that question
-        // goes to the other app and can be slow). Ask only after spaces and punctuation.
-        if (text.length != 1 || !text[0].isLetterOrDigit()) updateAutoCaps()
+        // Decide capitals here instead of asking the app after every space (each question is
+        // a round trip): a space right after . ? ! starts a sentence.
+        when {
+            c != null && c in ".?!" -> sentenceEnded = true
+            c == ' ' -> {
+                if (shift.value != Shift.Lock && capsField) shift.value = if (sentenceEnded) Shift.On else Shift.Off
+                sentenceEnded = false
+            }
+            text.length != 1 || !text[0].isLetterOrDigit() -> { sentenceEnded = false; updateAutoCaps() }
+            else -> sentenceEnded = false
+        }
     }
 
     private fun backspace() {
@@ -424,8 +429,11 @@ class PinyinKeysService : InputMethodService(),
         if (guidedTarget != null) mainHandler.post { refreshGuided() }
         if (undoAutocorrect()) return
         if (currentWord.isNotEmpty()) {
+            // Remember the word you started erasing; if you retype it differently, that's a typo fix.
+            if (eraseStart == null) eraseStart = currentWord
             currentWord = currentWord.dropLast(1)
             if (wordTouches.isNotEmpty()) wordTouches.removeAt(wordTouches.lastIndex)
+            if (currentWord.isEmpty()) erasedWord = eraseStart
         }
         if (currentWord.isEmpty()) suggestions.value = emptyList() else updateSuggestions()
         val now = android.os.SystemClock.uptimeMillis()
@@ -473,6 +481,13 @@ class PinyinKeysService : InputMethodService(),
         ic.deleteSurroundingText(corrected.length + 1, 0)
         ic.commitText(original, 1)
         keepWord(original)  // you undid it, so don't correct this word again
+        english?.let { d ->
+            if (original.lowercase() in d.learnedFixes) {
+                d.learnedFixes = d.learnedFixes - original.lowercase()
+                val lines = d.learnedFixes.map { "${it.key}\t${it.value}" }
+                lifecycleScope.launch(Dispatchers.IO) { Settings(this@PinyinKeysService).learnedFixes = lines }
+            }
+        }
         currentWord = original
         updateSuggestions()
         return true
@@ -516,6 +531,87 @@ class PinyinKeysService : InputMethodService(),
             }
             if (currentWord == word) suggestions.value = list
         }
+    }
+
+    private var loadedLearnVersion = -1
+    private var learningLoading = false
+
+    /**
+     * Loads the dictionaries and everything learned from you, in the background. Runs at
+     * start-up, and again when the app's "learned" screen changed something.
+     */
+    private fun loadLearning() {
+        if (learningLoading) return
+        learningLoading = true
+        lifecycleScope.launch {
+            withContext(Dispatchers.IO) {
+                val st = Settings(this@PinyinKeysService)
+                val version = st.learnVersion
+                if (english != null && nextWords != null && version == loadedLearnVersion) return@withContext
+                val dict = EnglishDictionary.get(this@PinyinKeysService)
+                dict.userWords = st.userWords.toSet()
+                dict.learnedFixes = st.learnedFixes.mapNotNull { l ->
+                    l.split('\t').takeIf { p -> p.size == 2 }?.let { p -> p[0] to p[1] }
+                }.toMap()
+                dict.touchBias = st.touchBias.mapNotNull { l ->
+                    val p = l.split('\t')
+                    if (p.size == 3 && p[0].length == 1) p[0][0] to Touch(p[1].toFloat(), p[2].toFloat()) else null
+                }.toMap()
+                val nw = nextWords ?: NextWords(this@PinyinKeysService)
+                if (nextWords == null) nw.load() else nw.loadLearned()
+                english = dict
+                nextWords = nw
+                loadedLearnVersion = version
+            }
+            learningLoading = false
+        }
+    }
+
+    /**
+     * 1. Personal touch model: after a word you didn't correct, nudge each letter's average
+     * tap offset towards where you actually tapped it (a slow moving average).
+     */
+    private fun learnTouches(word: String, touches: List<Touch?>) {
+        val dict = english ?: return
+        if (touches.size != word.length) return
+        val bias = dict.touchBias.toMutableMap()
+        word.lowercase().forEachIndexed { i, c ->
+            val t = touches[i] ?: return@forEachIndexed
+            val old = bias[c] ?: Touch(0f, 0f)
+            bias[c] = Touch(old.dx * 0.95f + t.dx * 0.05f, old.dy * 0.95f + t.dy * 0.05f)
+        }
+        dict.touchBias = bias
+        touchBiasDirty = true
+    }
+    private var touchBiasDirty = false
+
+    /** 9. Long-press a suggestion: forget everything learned about that word. */
+    private fun forgetWord(word: String) {
+        val w = word.removePrefix(LITERAL).lowercase()
+        english?.let { d ->
+            d.userWords = d.userWords - w
+            d.learnedFixes = d.learnedFixes.filter { (k, v) -> k != w && v != w }
+        }
+        nextWords?.forget(w)
+        val dict = english
+        lifecycleScope.launch(Dispatchers.IO) {
+            val st = Settings(this@PinyinKeysService)
+            if (dict != null) {
+                st.userWords = dict.userWords.toList()
+                st.learnedFixes = dict.learnedFixes.map { "${it.key}\t${it.value}" }
+            }
+            nextWords?.save()
+        }
+        suggestions.value = suggestions.value.filter { !it.removePrefix(LITERAL).equals(w, ignoreCase = true) }
+        toast("Forgot \"$w\"")
+    }
+
+    /** Next-word guesses, with one of your frequent two-word phrases in the third slot. */
+    private fun predictions(): List<String> {
+        val nw = nextWords ?: return emptyList()
+        val words = nw.predict(sentence)
+        val phrase = nw.phrase(sentence) ?: return words
+        return words.take(2) + phrase
     }
 
     /** Remember that you fix the typo [typo] to [fix]. Kept encrypted on the phone. */
@@ -568,6 +664,14 @@ class PinyinKeysService : InputMethodService(),
                 final = fix
             }
         }
+        // 5. You erased a non-word and typed a real word in its place: learn that typo.
+        val erased = erasedWord
+        erasedWord = null
+        eraseStart = null
+        if (erased != null && english?.isWord(erased) == false && english?.isWord(final) == true &&
+            editDistance(erased.lowercase(), final.lowercase()) in 1..2
+        ) learnFix(erased.lowercase(), final.lowercase())
+        if (final == word) learnTouches(word, touches)
         nextWords?.learn(sentence, final)
         // A word you've typed a few times that isn't in the dictionary (slang, names) is
         // yours: stop "correcting" it.
@@ -576,8 +680,29 @@ class PinyinKeysService : InputMethodService(),
     }
 
     /** A suggestion tapped: replace the word being typed (or add the next word) + space. */
+    /** Just typed . ? or ! (so the next space starts a sentence). */
+    private var sentenceEnded = false
+    /** Does this text box want automatic capitals? (decided once per box) */
+    private val capsField: Boolean
+        get() = (currentInputEditorInfo?.inputType ?: 0) and InputType.TYPE_TEXT_FLAG_CAP_SENTENCES != 0
+
     /** True right after a picked suggestion added a space (see smart punctuation). */
     private var autoSpaced = false
+
+    /** The word you started erasing with backspace, and the one fully erased (see learning). */
+    private var eraseStart: String? = null
+    private var erasedWord: String? = null
+
+    /** Number of single-letter edits between two words (small words only). */
+    private fun editDistance(a: String, b: String): Int {
+        val d = Array(a.length + 1) { IntArray(b.length + 1) }
+        for (i in 0..a.length) d[i][0] = i
+        for (j in 0..b.length) d[0][j] = j
+        for (i in 1..a.length) for (j in 1..b.length) {
+            d[i][j] = minOf(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + if (a[i - 1] == b[j - 1]) 0 else 1)
+        }
+        return d[a.length][b.length]
+    }
 
     /** When this keyboard last changed the text in a way that moves the cursor a lot. */
     private var lastOwnEditAt = 0L
@@ -596,10 +721,13 @@ class PinyinKeysService : InputMethodService(),
         autoSpaced = true
         currentWord = ""
         lastAutocorrect = null
-        nextWords?.learn(sentence, word)
-        addToSentence(word)
+        // A phrase ("my way") is learned word by word.
+        for (part in word.split(' ').filter { it.isNotEmpty() }) {
+            nextWords?.learn(sentence, part)
+            addToSentence(part)
+        }
         if (shift.value == Shift.On) shift.value = Shift.Off
-        suggestions.value = nextWords?.predict(sentence) ?: emptyList()
+        suggestions.value = predictions()
         updateAutoCaps()
     }
 

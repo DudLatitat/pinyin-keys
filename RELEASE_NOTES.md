@@ -3,6 +3,16 @@ A personal Android keyboard that shows Chinese and pinyin for the English you ty
 **Install:** download `pinyin-keys-<version>.apk` below, open it on the phone, then turn on
 Pinyin Keys in the system keyboard settings. Add your Claude API key in the Pinyin Keys app.
 
+## New in 1.3.0
+- Learns your touch: how far off-centre you hit each key, so corrections fit your fingers.
+- Learns from erasing: delete a misspelled word and retype it, and that typo is fixed for
+  you next time. Undoing a correction also forgets a wrong learned fix.
+- Your phrases: two-word phrases you type often appear as one-tap suggestions.
+- "What I've learned" in the app: see and remove learned typos and words, or forget
+  everything. Long-press a suggestion to forget that word.
+- Faster: dictionaries load in the background at start-up, and the keyboard asks the app
+  you're typing in fewer questions.
+
 ## New in 1.2.0
 - Touch-aware autocorrect: uses where your finger actually landed on each key, so slips
   onto a neighbouring key are fixed far more reliably (blpw → blow, fpod → food).

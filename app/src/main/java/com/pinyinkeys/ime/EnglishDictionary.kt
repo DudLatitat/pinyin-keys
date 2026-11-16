@@ -35,6 +35,13 @@ class EnglishDictionary private constructor(
         return best?.first
     }
 
+    /**
+     * Your personal touch habits: for each letter, how far off-centre you usually hit it
+     * (learned from words you didn't correct). Taps are judged relative to that, not the
+     * key's exact centre.
+     */
+    @Volatile var touchBias: Map<Char, Touch> = emptyMap()
+
     /** Typos you've fixed yourself before (typed -> what you picked), learned on the phone. */
     @Volatile var learnedFixes: Map<String, String> = emptyMap()
 
@@ -157,8 +164,9 @@ class EnglishDictionary private constructor(
         val a = KEY_POS[typed] ?: return 1.0
         val b = KEY_POS[meant] ?: return 1.0
         if (touch == null) return if (meant in (NEIGHBOURS[typed] ?: "")) 0.6 else 1.0
-        val x = a.first + touch.dx
-        val y = a.second + touch.dy
+        val bias = touchBias[typed]
+        val x = a.first + touch.dx - (bias?.dx ?: 0f)
+        val y = a.second + touch.dy - (bias?.dy ?: 0f)
         val d = kotlin.math.hypot((x - b.first).toDouble(), (y - b.second).toDouble())
         return when {
             d < 0.75 -> 0.25

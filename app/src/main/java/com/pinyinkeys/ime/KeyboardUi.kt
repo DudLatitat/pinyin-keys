@@ -63,6 +63,7 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.tween
 import kotlin.math.roundToInt
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -200,6 +201,7 @@ fun KeyboardUi(
     pastePreview: String?,
     suggestions: List<String>,
     onSuggestion: (String) -> Unit,
+    onForgetSuggestion: (String) -> Unit,
     toolsForced: Boolean,
     onShowTools: () -> Unit,
     correction: Pair<String, String>?,
@@ -252,7 +254,7 @@ fun KeyboardUi(
                 ) PasteBar(pastePreview, onShowTools, onPasteChip)
                 else if (!toolsForced && !sensitive && assist is AssistState.Idle &&
                     (mode == Mode.Assist || practice is PracticeState.Idle) && suggestions.isNotEmpty()
-                ) SuggestionBar(suggestions, onShowTools, onSuggestion)
+                ) SuggestionBar(suggestions, onShowTools, onSuggestion, onForgetSuggestion)
                 else Toolbar(sensitive || numberPad != null, mode, onMode, assist, onTranslate, onInsertChinese,
                     practice, onStartPractice, onHint, panelShown, togglePanel, onOpenSettings, tone, onTogglePolite, onExplain,
                     showPasteChip && !sensitive, onPasteChip)
@@ -954,7 +956,8 @@ private fun ToolsButton(onClick: () -> Unit) {
 
 /** Three word suggestions, best in the middle (like other keyboards). Tap to use one. */
 @Composable
-private fun SuggestionBar(words: List<String>, onTools: () -> Unit, onPick: (String) -> Unit) {
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+private fun SuggestionBar(words: List<String>, onTools: () -> Unit, onPick: (String) -> Unit, onForget: (String) -> Unit) {
     val kb = LocalKb.current
     // Order on screen: 2nd, 1st (middle, bold), 3rd.
     val shown = when (words.size) {
@@ -967,7 +970,12 @@ private fun SuggestionBar(words: List<String>, onTools: () -> Unit, onPick: (Str
         shown.forEachIndexed { i, w ->
             if (i > 0) Box(Modifier.size(width = 1.dp, height = 20.dp).background(kb.label.copy(alpha = 0.2f)))
             Box(
-                Modifier.weight(1f).height(44.dp).clickable(enabled = w != null) { w?.let(onPick) },
+                // Tap to use; long-press to make the keyboard forget a word it learned.
+                Modifier.weight(1f).height(44.dp).combinedClickable(
+                    enabled = w != null,
+                    onClick = { w?.let(onPick) },
+                    onLongClick = { w?.let(onForget) },
+                ),
                 contentAlignment = Alignment.Center,
             ) {
                 // Each word slides/fades in when it changes, like other keyboards.

@@ -19,7 +19,14 @@ class NextWords(private val context: Context) {
     /** How often you've typed each word (lowercase), for ranking your own words higher. */
     private val wordCounts = HashMap<String, Int>()
 
+    /** Loads your learned data and (once) the phrase table. */
     fun load() {
+        loadLearned()
+        if (phrases.isEmpty()) loadPhrases()
+    }
+
+    /** Re-reads only what was learned from you (after the app's "learned" screen changed it). */
+    fun loadLearned() {
         learned.clear()
         Settings(context).nextWordData.split('\n').forEach { line ->
             val parts = line.split('\t')
@@ -29,6 +36,9 @@ class NextWords(private val context: Context) {
         for ((ctx, m) in learned) if (' ' !in ctx) for ((w, c) in m) {
             wordCounts[w.lowercase()] = (wordCounts[w.lowercase()] ?: 0) + c
         }
+    }
+
+    private fun loadPhrases() {
         context.assets.open("en_phrases.txt").bufferedReader().useLines { lines ->
             lines.forEach { line ->
                 val t = line.indexOf('\t')
@@ -70,6 +80,29 @@ class NextWords(private val context: Context) {
             out[w] = (out[w] ?: 0.0) + minOf(60.0, c * 6.0)
         }
         return out
+    }
+
+    /**
+     * A two-word phrase you often type next ("my way" after "on"), or null. Needs each
+     * step to have been typed at least 3 times.
+     */
+    fun phrase(before: List<String>): String? {
+        val ctx = contexts(before)
+        val w1 = ctx.firstNotNullOfOrNull { c -> learned[c]?.maxByOrNull { it.value }?.takeIf { it.value >= 3 }?.key }
+            ?: return null
+        val after = contexts(before + w1)
+        val w2 = after.firstNotNullOfOrNull { c -> learned[c]?.maxByOrNull { it.value }?.takeIf { it.value >= 3 }?.key }
+            ?: return null
+        return "$w1 $w2"
+    }
+
+    /** Forget everything learned about [word]. */
+    fun forget(word: String) {
+        val w = word.lowercase()
+        wordCounts.remove(w)
+        learned.values.forEach { m -> m.keys.filter { it.lowercase() == w }.forEach { m.remove(it) } }
+        learned.keys.filter { k -> k.split(' ').any { it == w } }.forEach { learned.remove(it) }
+        dirty = true
     }
 
     /** How many times you've typed [word]. */
