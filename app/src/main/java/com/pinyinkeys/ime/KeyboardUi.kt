@@ -622,9 +622,15 @@ internal fun RowScope.Key(
     val latestAlt by rememberUpdatedState(onAlternate)
     val latestCursor by rememberUpdatedState(onCursor)
     val latestDragStart by rememberUpdatedState(onDragStart)
-    val touch = Modifier.pointerInput(alternates, onCursor != null) {
+    // Read the latest options inside the gesture instead of restarting it when they change
+    // (e.g. o ↔ O as auto-capitals switch). Restarting mid-press used to leave a key stuck.
+    val latestAlternates by rememberUpdatedState(alternates)
+    val hasSlide = onCursor != null
+    val touch = Modifier.pointerInput(hasSlide) {
         awaitEachGesture {
+          try {
             val down = awaitFirstDown(requireUnconsumed = false)
+            val alternates = latestAlternates
             pressed = true
             view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
             // Every key types the moment it's touched, so fast, overlapping taps always come
@@ -649,6 +655,8 @@ internal fun RowScope.Key(
                 val event = withTimeoutOrNull(40) { awaitPointerEvent() }
                 val change = event?.changes?.firstOrNull { it.id == down.id }
                 if (change != null && !change.pressed) { lifted = true; break }
+                // Safety: if no finger is down any more, end the press.
+                if (event != null && event.changes.none { it.pressed }) { lifted = true; break }
                 if (change != null) lastX = change.position.x
                 val dx = lastX - start
                 if (latestCursor != null) {
@@ -670,8 +678,11 @@ internal fun RowScope.Key(
             }
             // The letter was already typed on touch-down; a chosen alternate replaces it.
             if (lifted && popupSel >= 0 && alternates != null) latestAlt(alternates[popupSel])
+          } finally {
+            // Whatever happened (finger lifted, gesture cancelled), never leave the key stuck.
             popupSel = -1
             pressed = false
+          }
         }
     }
     // zIndex: draw a pressed key (and its preview) on top of its neighbours.
