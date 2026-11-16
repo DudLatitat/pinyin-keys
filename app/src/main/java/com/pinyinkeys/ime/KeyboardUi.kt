@@ -649,17 +649,26 @@ private fun SentenceCard(
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                     verticalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
+                    val speakWord = LocalSpeak.current
                     details.value.chunks.forEach { chunk ->
+                        // Each word: characters, pinyin, English meaning, grammar role.
+                        // Tap it to hear just that word.
                         Column(
                             Modifier
                                 .clip(RoundedCornerShape(6.dp))
                                 .background(MaterialTheme.colorScheme.secondaryContainer)
+                                .clickable { speakWord(chunk.hanzi) }
                                 .padding(horizontal = 8.dp, vertical = 4.dp),
                             horizontalAlignment = Alignment.CenterHorizontally,
                         ) {
                             Text(chunk.hanzi, fontSize = 18.sp, color = MaterialTheme.colorScheme.onSecondaryContainer)
                             Text(chunk.pinyin, fontSize = 12.sp, color = MaterialTheme.colorScheme.primary)
-                            Text(chunk.role, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSecondaryContainer)
+                            if (chunk.meaning.isNotEmpty()) Text(
+                                chunk.meaning, fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSecondaryContainer,
+                            )
+                            Text(chunk.role, fontSize = 10.sp,
+                                color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.7f))
                         }
                     }
                 }

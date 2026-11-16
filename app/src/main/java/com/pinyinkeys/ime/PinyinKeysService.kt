@@ -949,7 +949,9 @@ class PinyinKeysService : InputMethodService(),
         detailsStates[sentence] = Load.Loading
         lifecycleScope.launch {
             detailsStates[sentence] = onDemand("Couldn't load breakdown. Try again.") { cache, service ->
-                cache.getDetails(sentence) ?: service().details(sentence).also { cache.putDetails(sentence, it) }
+                // Breakdowns saved before word meanings existed are fetched again once.
+                cache.getDetails(sentence)?.takeIf { d -> d.chunks.all { it.meaning.isNotEmpty() } }
+                    ?: service().details(sentence).also { cache.putDetails(sentence, it) }
             }
         }
     }

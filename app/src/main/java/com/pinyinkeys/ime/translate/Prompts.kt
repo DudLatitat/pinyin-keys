@@ -24,7 +24,8 @@ object Prompts {
         - "chunks": the sentence split into meaningful words/particles, in order, covering every character
           (skip punctuation and emoji). Each has its hanzi, its pinyin with tone marks, and a short English
           grammar role such as Subject, Verb, Object, Time, Place, Adverb, Measure word, Question particle,
-          New state, Possessive, Greeting.
+          New state, Possessive, Greeting, and "meaning": a short English meaning of that word as used
+          here (1-3 words, e.g. "this", "to be", "test"; for particles, what they do, e.g. "question").
         - Output only the JSON object.
     """.trimIndent()
 
@@ -40,11 +41,12 @@ object Prompts {
           "items": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["hanzi", "pinyin", "role"],
+            "required": ["hanzi", "pinyin", "role", "meaning"],
             "properties": {
               "hanzi": {"type": "string"},
               "pinyin": {"type": "string"},
-              "role": {"type": "string"}
+              "role": {"type": "string"},
+              "meaning": {"type": "string"}
             }
           }
         }

@@ -10,6 +10,8 @@ data class Chunk(
     val hanzi: String,
     val pinyin: String,
     val role: String,
+    /** Short English meaning of this word ("this", "test"). Empty in older saved data. */
+    val meaning: String = "",
 )
 
 /** What Translate returns: kept small so it comes back fast. */
