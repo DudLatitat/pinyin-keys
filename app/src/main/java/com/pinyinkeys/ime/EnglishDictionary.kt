@@ -35,18 +35,27 @@ class EnglishDictionary private constructor(
         return best?.first
     }
 
+    /** Typos you've fixed yourself before (typed -> what you picked), learned on the phone. */
+    @Volatile var learnedFixes: Map<String, String> = emptyMap()
+
     /**
-     * Up to [n] suggestions for a partly typed [typed] word, best first: likely
-     * corrections (one or two typos away) and completions, ranked by frequency and
-     * closeness. The typed word's capitalization is kept.
+     * Up to [n] suggestions for a partly typed [typed] word, best first: your own past fix
+     * for this typo, likely corrections (using where you actually tapped, [touches]) and
+     * completions, ranked by frequency, closeness and [boost] (sentence context, habits).
      */
-    fun suggest(typed: String, n: Int = 3, boost: Map<String, Double> = emptyMap()): List<String> {
+    fun suggest(
+        typed: String,
+        n: Int = 3,
+        boost: Map<String, Double> = emptyMap(),
+        touches: List<Touch?> = emptyList(),
+    ): List<String> {
         if (typed.isEmpty()) return emptyList()
         val lower = typed.lowercase()
         val scores = HashMap<String, Double>()
         fun consider(w: String, score: Double) {
             if (score > (scores[w] ?: Double.NEGATIVE_INFINITY)) scores[w] = score
         }
+        learnedFixes[lower]?.let { consider(it, 500.0) }        // your own past fix wins
         byLower[lower]?.let { consider(lower, it.second + 40.0) }  // exact word: strong
         if (lower in userWords) consider(lower, 300.0)
         apostropheFix(lower)?.let { consider(it, 400.0) }  // "arent" -> "aren't" first
@@ -59,10 +68,10 @@ class EnglishDictionary private constructor(
             if (w != lower) consider(w, byLower.getValue(w).second - 4.0 * (w.length - lower.length))
             i++; seen++
         }
-        // Corrections: one edit away (two for longer words), using the keyboard layout.
+        // Corrections: one slip away (two for longer words), judged by where you tapped.
         if (lower.length >= 2) {
-            for ((w, cost) in edits(lower)) {
-                byLower[w]?.let { consider(w, it.second - cost * 25.0) }
+            for ((w, cost) in corrections(lower, touches)) {
+                byLower[w]?.let { consider(w, it.second - cost * 30.0) }
             }
         }
         // Context and personal boosts: words that fit the sentence so far, or that you type
@@ -72,7 +81,7 @@ class EnglishDictionary private constructor(
                 val base = byLower[w]?.second?.toDouble() ?: 120.0
                 val current = scores[w] ?: (base - 4.0 * (w.length - lower.length))
                 scores[w] = current + b
-            } else if (w == lower && w in scores) scores[w] = scores.getValue(w) + b / 2
+            } else if (w in scores) scores[w] = scores.getValue(w) + b / 2
         }
         return scores.entries.sortedByDescending { it.value }.take(n)
             .map { matchCase(byLower[it.key]?.first ?: it.key, typed) }
@@ -80,39 +89,83 @@ class EnglishDictionary private constructor(
 
     /**
      * The word to autocorrect [typed] to when space is pressed, or null to leave it.
-     * Only changes words that aren't in the dictionary, to a common word one typo away.
+     * Order: your own past fix for this typo; a missing apostrophe; then the best word one
+     * slip away (two for longer words) given where you tapped and the sentence so far.
+     * Words you use (yours or in the dictionary) are left alone, except a very rare word
+     * when your taps clearly point at a common one.
      */
-    fun autocorrect(typed: String): String? {
+    fun autocorrect(typed: String, touches: List<Touch?> = emptyList(), boost: Map<String, Double> = emptyMap()): String? {
         val lower = typed.lowercase()
         if (lower in userWords) return null
-        // Only when what was typed isn't a word itself ("ill", "were" and "its" are words).
+        learnedFixes[lower]?.let { return matchCase(byLower[it]?.first ?: it, typed) }
         if (lower !in byLower) apostropheFix(lower)?.let { return matchCase(it, typed) }
-        if (lower.length < 2 || lower in byLower || typed.any { it.isDigit() }) {
-            // Fix a lone lowercase "i" and missing apostrophes like "dont".
-            return if (typed == "i") "I" else null
+        if (typed == "i") return "I"
+        if (lower.length < 2 || typed.any { it.isDigit() }) return null
+        val known = byLower[lower]?.second
+        val candidates = corrections(lower, touches).mapNotNull { (w, cost) ->
+            byLower[w]?.let { Triple(w, cost, it.second + (boost[w] ?: 0.0) / 3) }
         }
-        val best = edits(lower).mapNotNull { (w, cost) -> byLower[w]?.let { Triple(w, cost, it.second) } }
-            .filter { it.second <= 1.0 }
-            .maxByOrNull { it.third - it.second * 20 } ?: return null
-        if (best.third < 60) return null  // too rare to be confident
-        return matchCase(byLower.getValue(best.first).first, typed)
+        val best = candidates.maxByOrNull { it.third - it.second * 45 } ?: return null
+        return when {
+            // A real word was typed: only replace a rare one, and only on strong evidence.
+            known != null -> if (known < 25 && best.second <= 0.3 && best.third >= 150) matchCase(byLower.getValue(best.first).first, typed) else null
+            best.second > 1.2 || best.third < 50 -> null  // not confident enough
+            else -> matchCase(byLower.getValue(best.first).first, typed)
+        }
+    }
+
+    /** One-slip corrections, plus two neighbour slips for words of 5+ letters. */
+    private fun corrections(w: String, touches: List<Touch?>): List<Pair<String, Double>> {
+        val one = edits(w, touches)
+        if (w.length < 5) return one
+        val out = ArrayList(one)
+        // Two slips: only cheap substitutions (neighbouring keys), to keep it fast and sane.
+        for ((w1, c1) in one) {
+            if (c1 > 0.6 || w1.length != w.length) continue
+            for (i in w1.indices) {
+                if (w1[i] != w[i]) continue  // don't change the same letter twice
+                for (c in NEIGHBOURS[w[i]] ?: "") {
+                    val cost = subCost(w[i], c, touches.getOrNull(i))
+                    if (cost <= 0.6) out += (w1.substring(0, i) + c + w1.substring(i + 1) to c1 + cost + 0.2)
+                }
+            }
+        }
+        return out
     }
 
     /** Words one edit away (delete, swap, replace, insert), plus apostrophe fixes. */
-    private fun edits(w: String): List<Pair<String, Double>> {
+    private fun edits(w: String, touches: List<Touch?> = emptyList()): List<Pair<String, Double>> {
         val out = ArrayList<Pair<String, Double>>(w.length * 60)
         val letters = "abcdefghijklmnopqrstuvwxyz'"
         for (i in w.indices) {
             out += (w.removeRange(i, i + 1) to 1.0)
             if (i + 1 < w.length) out += (w.substring(0, i) + w[i + 1] + w[i] + w.substring(i + 2) to 0.8)
             for (c in letters) if (c != w[i]) {
-                // A neighbouring key is a more likely slip than a far-away one.
-                val cost = if (c in (NEIGHBOURS[w[i]] ?: "")) 0.6 else 1.0
-                out += (w.substring(0, i) + c + w.substring(i + 1) to cost)
+                out += (w.substring(0, i) + c + w.substring(i + 1) to subCost(w[i], c, touches.getOrNull(i)))
             }
         }
         for (i in 0..w.length) for (c in letters) out += (w.substring(0, i) + c + w.substring(i) to if (c == '\'') 0.3 else 1.0)
         return out
+    }
+
+    /**
+     * How unlikely it is that you meant [meant] when the keyboard got [typed]. With the
+     * tap position we measure how far your finger was from [meant]'s key; without it,
+     * neighbouring keys count as likely slips.
+     */
+    private fun subCost(typed: Char, meant: Char, touch: Touch?): Double {
+        val a = KEY_POS[typed] ?: return 1.0
+        val b = KEY_POS[meant] ?: return 1.0
+        if (touch == null) return if (meant in (NEIGHBOURS[typed] ?: "")) 0.6 else 1.0
+        val x = a.first + touch.dx
+        val y = a.second + touch.dy
+        val d = kotlin.math.hypot((x - b.first).toDouble(), (y - b.second).toDouble())
+        return when {
+            d < 0.75 -> 0.25
+            d < 1.15 -> 0.55
+            d < 1.6 -> 0.85
+            else -> 1.1
+        }
     }
 
     private fun lowerBound(key: String): Int {
@@ -122,6 +175,13 @@ class EnglishDictionary private constructor(
     }
 
     companion object {
+        /** Centre of each letter key on the QWERTY grid, in key widths / rows. */
+        private val KEY_POS: Map<Char, Pair<Float, Float>> = buildMap {
+            "qwertyuiop".forEachIndexed { i, c -> put(c, i + 0.5f to 0f) }
+            "asdfghjkl".forEachIndexed { i, c -> put(c, i + 1.0f to 1f) }
+            "zxcvbnm".forEachIndexed { i, c -> put(c, i + 2.0f to 2f) }
+        }
+
         /** Keys next to each other on QWERTY. */
         private val NEIGHBOURS = mapOf(
             'q' to "wa", 'w' to "qeas", 'e' to "wrsd", 'r' to "etdf", 't' to "ryfg", 'y' to "tugh",

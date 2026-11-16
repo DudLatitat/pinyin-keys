@@ -72,7 +72,10 @@ class NextWords(private val context: Context) {
         return out
     }
 
-    /** "w1 w2" and "w2" for the last two words ("^" = start of sentence). */
+    /** How many times you've typed [word]. */
+    fun count(word: String): Int = wordCounts[word.lowercase()] ?: 0
+
+        /** "w1 w2" and "w2" for the last two words ("^" = start of sentence). */
     private fun contexts(before: List<String>): List<String> {
         val words = listOf("^") + before.map { it.lowercase() }
         val last = words.last()

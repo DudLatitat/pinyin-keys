@@ -631,6 +631,11 @@ internal fun RowScope.Key(
           try {
             val down = awaitFirstDown(requireUnconsumed = false)
             val alternates = latestAlternates
+            // Remember where on the key this tap landed (for touch-aware autocorrect).
+            if (size.width > 0 && size.height > 0) {
+                TouchTracker.dx = down.position.x / size.width - 0.5f
+                TouchTracker.dy = down.position.y / size.height - 0.5f
+            }
             pressed = true
             view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
             // Every key types the moment it's touched, so fast, overlapping taps always come

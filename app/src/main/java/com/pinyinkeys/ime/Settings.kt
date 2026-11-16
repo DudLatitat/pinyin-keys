@@ -101,6 +101,11 @@ class Settings(context: Context) {
         get() = readList("user_words")
         set(v) = writeList("user_words", v)
 
+    /** Typos you've fixed by picking a suggestion ("typo<TAB>fix"). */
+    var learnedFixes: List<String>
+        get() = readList("learned_fixes")
+        set(v) = writeList("learned_fixes", v)
+
     /** Text the user pasted with this keyboard (newest first). Encrypted, on the phone only. */
     var clipHistory: List<String>
         get() = readList("clip_history")

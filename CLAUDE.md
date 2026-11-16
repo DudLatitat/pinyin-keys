@@ -71,6 +71,9 @@ Git author identity: commits use the GitHub noreply email, never a personal emai
 - Next-word suggestions learn which word follows which from what the owner types. These
   word pairs stay in the app's encrypted settings on the phone and are never learned in
   password, email or web-address fields, or in fields that ask for no learning.
+- Typing style is learned the same way, on the phone only: typos fixed by picking a
+  suggestion, words typed repeatedly that aren't in the dictionary, and word counts.
+  Tap positions on keys are used for autocorrect while typing and never stored.
 
 ## Dependencies
 

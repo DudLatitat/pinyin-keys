@@ -16,7 +16,7 @@ android {
         targetSdk = 35
         // versionCode must go up for every install-over-update: CI uses its run number.
         versionCode = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 2
-        versionName = "1.1.8"
+        versionName = "1.2.0"
     }
 
     // Release signing. The keystore and passwords come from GitHub Actions secrets via

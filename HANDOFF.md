@@ -57,6 +57,9 @@
   key press animation, context-boosted completions (NextWords.boosts), double-tap caps,
   smart punctuation, long-backspace word delete, language indicators (space bar label,
   lit 中 key, flash), Tone enum 随/俏/敬 (casual/slang/polite, separate cache keys).
+- 1.2.0 autocorrect: TouchTracker (tap offset per key) -> EnglishDictionary.subCost uses
+  key geometry (KEY_POS); learnedFixes (typo->fix, Settings.learnedFixes); auto-keep words
+  typed >= 2 times; 2-slip corrections for 5+ letter words; context boosts in autocorrect.
 - Suggested next: tests + split PinyinKeysService.kt + privacy review; then flashcards.
 - App icon: adaptive vector (white key with 中 on blue), with a monochrome layer.
 - Releases (owner: no prereleases): every signed CI build publishes a full release

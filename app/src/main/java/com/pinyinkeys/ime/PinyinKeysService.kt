@@ -94,6 +94,12 @@ class PinyinKeysService : InputMethodService(),
     private var nextWords: NextWords? = null
     /** The word being typed (tracked here, so we don't ask the app on every key). */
     private var currentWord = ""
+    /** Where each letter of [currentWord] was tapped (for touch-aware autocorrect). */
+    private val wordTouches = ArrayList<Touch?>()
+
+    /** Tap positions for the current word, or empty if they're out of step with it. */
+    private fun touchesForWord(): List<Touch?> =
+        if (wordTouches.size == currentWord.length) wordTouches.toList() else emptyList()
     /** The last few finished words of this sentence, for next-word suggestions and learning. */
     private val sentence = ArrayList<String>()
 
@@ -264,7 +270,11 @@ class PinyinKeysService : InputMethodService(),
         if (english == null) lifecycleScope.launch {
             english = withContext(Dispatchers.IO) {
                 EnglishDictionary.get(this@PinyinKeysService).also {
-                    it.userWords = Settings(this@PinyinKeysService).userWords.toSet()
+                    val st = Settings(this@PinyinKeysService)
+                    it.userWords = st.userWords.toSet()
+                    it.learnedFixes = st.learnedFixes.mapNotNull { l ->
+                        l.split('\t').takeIf { p -> p.size == 2 }?.let { p -> p[0] to p[1] }
+                    }.toMap()
                 }
             }
         }
@@ -363,6 +373,10 @@ class PinyinKeysService : InputMethodService(),
         if (c != null && (c.isLetter() || (c == '\'' && currentWord.isNotEmpty()))) {
             // A letter: part of the current word. Update suggestions for it.
             ic.commitText(text, 1)
+            if (wordTouches.size != currentWord.length) {
+                wordTouches.clear(); repeat(currentWord.length) { wordTouches += null }
+            }
+            wordTouches += Touch(TouchTracker.dx, TouchTracker.dy)
             currentWord += c
             correctionNotice.value = null
             if (shift.value == Shift.On) shift.value = Shift.Off
@@ -409,7 +423,10 @@ class PinyinKeysService : InputMethodService(),
         markOwnEdit()  // our own deletion moves the cursor back; don't treat it as a jump
         if (guidedTarget != null) mainHandler.post { refreshGuided() }
         if (undoAutocorrect()) return
-        if (currentWord.isNotEmpty()) currentWord = currentWord.dropLast(1)
+        if (currentWord.isNotEmpty()) {
+            currentWord = currentWord.dropLast(1)
+            if (wordTouches.isNotEmpty()) wordTouches.removeAt(wordTouches.lastIndex)
+        }
         if (currentWord.isEmpty()) suggestions.value = emptyList() else updateSuggestions()
         val now = android.os.SystemClock.uptimeMillis()
         val repeating = now - lastBackspaceAt < 150
@@ -486,9 +503,10 @@ class PinyinKeysService : InputMethodService(),
         if (!suggestionsAllowed() || dict == null || word.isEmpty()) { suggestions.value = emptyList(); return }
         // Boosts from the sentence so far and your own word habits (copied for the background thread).
         val boosts = nextWords?.boosts(sentence.toList()) ?: emptyMap()
+        val touches = touchesForWord()
         suggestJob = lifecycleScope.launch {
             val list = withContext(Dispatchers.Default) {
-                val s = dict.suggest(word, boost = boosts)
+                val s = dict.suggest(word, boost = boosts, touches = touches)
                 // Not a known word: also offer exactly what was typed (shown in quotes), so
                 // it can be kept as-is instead of being "corrected".
                 if (word.length >= 2 && !dict.isWord(word)) {
@@ -498,6 +516,14 @@ class PinyinKeysService : InputMethodService(),
             }
             if (currentWord == word) suggestions.value = list
         }
+    }
+
+    /** Remember that you fix the typo [typo] to [fix]. Kept encrypted on the phone. */
+    private fun learnFix(typo: String, fix: String) {
+        val dict = english ?: return
+        dict.learnedFixes = (dict.learnedFixes + (typo to fix)).entries.toList().takeLast(1000).associate { it.toPair() }
+        val lines = dict.learnedFixes.map { "${it.key}\t${it.value}" }
+        lifecycleScope.launch(Dispatchers.IO) { Settings(this@PinyinKeysService).learnedFixes = lines }
     }
 
     /** Remember [word] as a real word: suggested, and never autocorrected. */
@@ -524,11 +550,13 @@ class PinyinKeysService : InputMethodService(),
      */
     private fun finishWord(ic: android.view.inputmethod.InputConnection, autocorrectOnly: Boolean) {
         val word = currentWord
+        val touches = touchesForWord()
+        wordTouches.clear()
         currentWord = ""
         if (word.isEmpty() || !suggestionsAllowed()) return
         var final = word
         if (autocorrectOnly && Settings(this).autocorrect) {
-            val fix = english?.autocorrect(word)
+            val fix = english?.autocorrect(word, touches, nextWords?.boosts(sentence.toList()) ?: emptyMap())
             if (fix != null && fix != word) {
                 markOwnEdit()
                 ic.deleteSurroundingText(word.length, 0)
@@ -541,6 +569,9 @@ class PinyinKeysService : InputMethodService(),
             }
         }
         nextWords?.learn(sentence, final)
+        // A word you've typed a few times that isn't in the dictionary (slang, names) is
+        // yours: stop "correcting" it.
+        if (english?.isWord(final) == false && (nextWords?.count(final) ?: 0) >= 2) keepWord(final)
         addToSentence(final)
     }
 
@@ -556,6 +587,10 @@ class PinyinKeysService : InputMethodService(),
         val ic = currentInputConnection ?: return
         markOwnEdit()
         val word = if (picked.startsWith(LITERAL)) picked.removePrefix(LITERAL).also(::keepWord) else picked
+        // You fixed a typo by picking a word: remember it, so next time it's fixed for you.
+        if (!picked.startsWith(LITERAL) && currentWord.length >= 2 && !currentWord.equals(word, ignoreCase = true) &&
+            english?.isWord(currentWord) == false && !word.lowercase().startsWith(currentWord.lowercase())
+        ) learnFix(currentWord.lowercase(), word.lowercase())
         if (currentWord.isNotEmpty()) ic.deleteSurroundingText(currentWord.length, 0)
         ic.commitText("$word ", 1)
         autoSpaced = true
