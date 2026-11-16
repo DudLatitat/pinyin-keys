@@ -211,6 +211,8 @@ fun KeyboardUi(
     numberPad: NumberPadKind?,
     enterLabel: String?,
     onCursorMove: (Int) -> Unit,
+    onReplaceLast: (String) -> Unit,
+    onUndoSpace: () -> Unit,
     tone: com.pinyinkeys.ime.translate.Tone,
     onTogglePolite: () -> Unit,
     onExplain: () -> Unit,
@@ -264,10 +266,10 @@ fun KeyboardUi(
                 when (panelShown) {
                     Panel.Keys -> if (numberPad != null)
                         NumberPad(numberPad, enterLabel, onText, onBackspace, onEnter)
-                    else Keys(page, { page = it }, shift, onShift, chinese, onToggleChinese, onText, onBackspace, onEnter, onSwitchKeyboard, onCursorMove)
+                    else Keys(page, { page = it }, shift, onShift, chinese, onToggleChinese, onText, onBackspace, onEnter, onSwitchKeyboard, onCursorMove, onReplaceLast, onUndoSpace)
                     Panel.Emoji -> EmojiGrid(emojiTab, recentEmoji, onEmoji)
                     // No clipboard or editing panel in password fields.
-                    Panel.Clipboard -> if (sensitive) Keys(page, { page = it }, shift, onShift, chinese, onToggleChinese, onText, onBackspace, onEnter, onSwitchKeyboard, onCursorMove)
+                    Panel.Clipboard -> if (sensitive) Keys(page, { page = it }, shift, onShift, chinese, onToggleChinese, onText, onBackspace, onEnter, onSwitchKeyboard, onCursorMove, onReplaceLast, onUndoSpace)
                         else {
                             // Newest copy first (marked "Latest"), then pinned items, then older copies.
                             val latest = clipHistory.firstOrNull()
@@ -441,6 +443,8 @@ private fun Keys(
     onEnter: () -> Unit,
     onSwitchKeyboard: () -> Unit,
     onCursorMove: (Int) -> Unit,
+    onReplaceLast: (String) -> Unit,
+    onUndoSpace: () -> Unit,
 ) {
     val kb = LocalKb.current
     // Briefly show a big "中" or "EN" over the keys after switching language.
@@ -466,7 +470,7 @@ private fun Keys(
                     row.forEach { c ->
                         val label = if (shift != Shift.Off) c.uppercase() else c.toString()
                         val alts = ALTERNATES[c]?.map { if (shift != Shift.Off) it.uppercase() else it }
-                        Key(label, preview = true, alternates = alts, onAlternate = onText) { onText(label) }
+                        Key(label, preview = true, alternates = alts, onAlternate = onReplaceLast) { onText(label) }
                     }
                     if (i == 1) Spacer1(0.5f)
                     if (i == 2) Key("⌫", 1.5f, function = true, repeat = true, onClick = onBackspace)
@@ -489,9 +493,9 @@ private fun Keys(
             // Slide along the space bar to move the cursor.
             // Space on a symbols page goes back to the letters (like other keyboards).
             // The space bar names the current language, like other keyboards.
-            Key(if (chinese) "拼音" else "English", 4.4f, onCursor = onCursorMove, fontSize = 14,
+            Key(if (chinese) "拼音" else "English", 4.4f, onCursor = onCursorMove, onDragStart = onUndoSpace, fontSize = 14,
                 labelColor = kb.label.copy(alpha = 0.55f)) { onText(" "); if (page != 0) onPage(0) }
-            Key(if (chinese) "。" else ".", 1f, alternates = PERIOD_ALTERNATES, onAlternate = onText) { onText(".") }
+            Key(if (chinese) "。" else ".", 1f, alternates = PERIOD_ALTERNATES, onAlternate = onReplaceLast) { onText(".") }
             Key("⏎", 1.4f, function = true, onClick = onEnter)
         }
     }
@@ -572,6 +576,8 @@ internal fun RowScope.Key(
     onAlternate: (String) -> Unit = {},
     /** Space bar: slide sideways to move the cursor by this many characters. */
     onCursor: ((Int) -> Unit)? = null,
+    /** Space bar: called when a slide starts, to take back the space typed on press. */
+    onDragStart: () -> Unit = {},
     onClick: () -> Unit,
 ) {
     val kb = LocalKb.current
@@ -604,19 +610,21 @@ internal fun RowScope.Key(
     var popupSel by remember { mutableStateOf(-1) }
     val latestAlt by rememberUpdatedState(onAlternate)
     val latestCursor by rememberUpdatedState(onCursor)
+    val latestDragStart by rememberUpdatedState(onDragStart)
     val touch = Modifier.pointerInput(alternates, onCursor != null) {
         awaitEachGesture {
             val down = awaitFirstDown(requireUnconsumed = false)
             pressed = true
             view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+            // Every key types the moment it's touched, so fast, overlapping taps always come
+            // out in the right order. A long-press alternate or a space-bar slide then
+            // replaces / takes back what was typed.
+            latestOnClick()
             if (alternates == null && onCursor == null) {
-                // Ordinary key: type on touch-down for speed.
-                latestOnClick()
                 waitForUpOrCancellation()
                 pressed = false
                 return@awaitEachGesture
             }
-            // Keys with a hold/slide action decide when the finger lifts.
             val start = down.position.x
             val startTime = down.uptimeMillis
             val stepPx = 12.dp.toPx()      // space bar: one character per 12dp of sliding
@@ -633,7 +641,7 @@ internal fun RowScope.Key(
                 if (change != null) lastX = change.position.x
                 val dx = lastX - start
                 if (latestCursor != null) {
-                    if (!dragging && kotlin.math.abs(dx) > 16.dp.toPx()) dragging = true
+                    if (!dragging && kotlin.math.abs(dx) > 16.dp.toPx()) { dragging = true; latestDragStart() }
                     if (dragging) {
                         val steps = (dx / stepPx).toInt()
                         if (steps != moved) { latestCursor?.invoke(steps - moved); moved = steps }
@@ -649,12 +657,8 @@ internal fun RowScope.Key(
                 }
                 change?.consume()
             }
-            when {
-                !lifted -> {}
-                popupSel >= 0 && alternates != null -> latestAlt(alternates[popupSel])
-                dragging -> {}
-                else -> latestOnClick()
-            }
+            // The letter was already typed on touch-down; a chosen alternate replaces it.
+            if (lifted && popupSel >= 0 && alternates != null) latestAlt(alternates[popupSel])
             popupSel = -1
             pressed = false
         }

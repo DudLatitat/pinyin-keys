@@ -219,6 +219,8 @@ class PinyinKeysService : InputMethodService(),
                     numberPad = numberPad.value,
                     enterLabel = enterLabel.value,
                     onCursorMove = ::moveCursor,
+                    onReplaceLast = ::replaceLastChar,
+                    onUndoSpace = ::undoSpace,
                     tone = tone.value,
                     onTogglePolite = ::togglePolite,
                     onExplain = ::explainCopied,
@@ -397,6 +399,7 @@ class PinyinKeysService : InputMethodService(),
         }
         if (!chinese.value) clearAssist()
         val ic = currentInputConnection ?: return
+        markOwnEdit()  // our own deletion moves the cursor back; don't treat it as a jump
         if (guidedTarget != null) mainHandler.post { refreshGuided() }
         if (undoAutocorrect()) return
         if (currentWord.isNotEmpty()) currentWord = currentWord.dropLast(1)
@@ -565,8 +568,10 @@ class PinyinKeysService : InputMethodService(),
         // Our own edits (a picked suggestion, an autocorrect, a paste) move the cursor too;
         // the app reports that a moment later, so ignore moves right after we edited.
         if (android.os.SystemClock.uptimeMillis() - lastOwnEditAt < 400) return
-        val jump = kotlin.math.abs(newSelStart - oldSelStart)
-        if (newSelStart != newSelEnd || jump > currentWord.length + 2 && jump > 2) {
+        // Typing moves the cursor forward, and fast typing reports it in jumps. Only a move
+        // backwards, a selection, or a big jump means you moved the cursor yourself.
+        val delta = newSelStart - oldSelStart
+        if (newSelStart != newSelEnd || delta < 0 || delta > 40) {
             if (composing.value.isEmpty()) {
                 currentWord = ""
                 lastAutocorrect = null
@@ -1091,6 +1096,24 @@ class PinyinKeysService : InputMethodService(),
         lifecycleScope.launch(Dispatchers.IO) {
             Settings(this@PinyinKeysService).translationService()?.warmUp()
         }
+    }
+
+    /** Long-press alternate chosen: swap the character just typed for [alt]. */
+    private fun replaceLastChar(alt: String) {
+        if (composing.value.isNotEmpty()) {
+            setComposing(composing.value.dropLast(1))
+        } else {
+            markOwnEdit()
+            currentInputConnection?.deleteSurroundingText(1, 0)
+            if (currentWord.isNotEmpty()) currentWord = currentWord.dropLast(1)
+        }
+        typeText(alt)
+    }
+
+    /** A space-bar slide started: take back the space that was typed on touch-down. */
+    private fun undoSpace() {
+        val ic = currentInputConnection ?: return
+        if (ic.getTextBeforeCursor(1, 0)?.toString() == " ") { markOwnEdit(); ic.deleteSurroundingText(1, 0) }
     }
 
     /** Space-bar slide: move the cursor [steps] characters (negative = left). */

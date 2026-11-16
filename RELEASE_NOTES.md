@@ -3,6 +3,12 @@ A personal Android keyboard that shows Chinese and pinyin for the English you ty
 **Install:** download `pinyin-keys-<version>.apk` below, open it on the phone, then turn on
 Pinyin Keys in the system keyboard settings. Add your Claude API key in the Pinyin Keys app.
 
+## New in 1.1.5
+- Fast typing is more accurate: every key now types the instant it's touched, so quick
+  overlapping taps no longer come out in the wrong order ("teh"). Holding a key still
+  offers alternates, and sliding the space bar still moves the cursor.
+- Autocorrect no longer loses track of the word when typing quickly.
+
 ## New in 1.1.4
 - New 俏 slang tone for very casual texting (哈哈, 嗯嗯, 咋了, 绝了...). The tone button
   cycles 随 casual → 俏 slang → 敬 polite.
