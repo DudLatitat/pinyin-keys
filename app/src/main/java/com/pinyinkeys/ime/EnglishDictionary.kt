@@ -40,7 +40,7 @@ class EnglishDictionary private constructor(
      * corrections (one or two typos away) and completions, ranked by frequency and
      * closeness. The typed word's capitalization is kept.
      */
-    fun suggest(typed: String, n: Int = 3): List<String> {
+    fun suggest(typed: String, n: Int = 3, boost: Map<String, Double> = emptyMap()): List<String> {
         if (typed.isEmpty()) return emptyList()
         val lower = typed.lowercase()
         val scores = HashMap<String, Double>()
@@ -64,6 +64,15 @@ class EnglishDictionary private constructor(
             for ((w, cost) in edits(lower)) {
                 byLower[w]?.let { consider(w, it.second - cost * 25.0) }
             }
+        }
+        // Context and personal boosts: words that fit the sentence so far, or that you type
+        // often, move up (and are added even if the dictionary scan didn't reach them).
+        for ((w, b) in boost) {
+            if (w.startsWith(lower) && w != lower) {
+                val base = byLower[w]?.second?.toDouble() ?: 120.0
+                val current = scores[w] ?: (base - 4.0 * (w.length - lower.length))
+                scores[w] = current + b
+            } else if (w == lower && w in scores) scores[w] = scores.getValue(w) + b / 2
         }
         return scores.entries.sortedByDescending { it.value }.take(n)
             .map { matchCase(byLower[it.key]?.first ?: it.key, typed) }

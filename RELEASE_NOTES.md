@@ -3,6 +3,15 @@ A personal Android keyboard that shows Chinese and pinyin for the English you ty
 **Install:** download `pinyin-keys-<version>.apk` below, open it on the phone, then turn on
 Pinyin Keys in the system keyboard settings. Add your Claude API key in the Pinyin Keys app.
 
+## New in 1.1.2
+- Keys shrink slightly and spring back when pressed.
+- Smarter word completions: they use the sentence so far ("I miss y" → you) and favour
+  words you type often.
+- Double-tap shift for caps lock.
+- Punctuation after a picked suggestion removes the extra space ("word." not "word .").
+- Space on the symbols page returns to letters.
+- Holding backspace deletes whole words after about 1.5 seconds.
+
 ## New in 1.1.1
 - Themes: System, Dark, Light, Black (AMOLED), Midnight, Sakura, Jade. Pick one in the
   Pinyin Keys app under Theme.

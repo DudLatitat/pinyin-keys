@@ -62,6 +62,7 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.tween
 import kotlin.math.roundToInt
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -476,7 +477,8 @@ private fun Keys(
             LanguageKey(chinese, onToggleChinese)
             Key(if (chinese) "，" else ",", 1f) { onText(",") }
             // Slide along the space bar to move the cursor.
-            Key("␣", 4.4f, onCursor = onCursorMove) { onText(" ") }
+            // Space on a symbols page goes back to the letters (like other keyboards).
+            Key("␣", 4.4f, onCursor = onCursorMove) { onText(" "); if (page != 0) onPage(0) }
             Key(if (chinese) "。" else ".", 1f, alternates = PERIOD_ALTERNATES, onAlternate = onText) { onText(".") }
             Key("⏎", 1.4f, function = true, onClick = onEnter)
         }
@@ -568,6 +570,11 @@ internal fun RowScope.Key(
             }
         }
     }
+    val pressScale by androidx.compose.animation.core.animateFloatAsState(
+        if (pressed) 0.9f else 1f,
+        androidx.compose.animation.core.spring(dampingRatio = 0.55f, stiffness = 900f),
+        label = "keyPress",
+    )
     // Index of the highlighted alternate while the long-press popup is open (-1 = closed).
     var popupSel by remember { mutableStateOf(-1) }
     val latestAlt by rememberUpdatedState(onAlternate)
@@ -632,6 +639,8 @@ internal fun RowScope.Key(
         Box(
             Modifier
                 .matchParentSize()
+                // Pressed keys shrink a little and spring back.
+                .graphicsLayer { scaleX = pressScale; scaleY = pressScale }
                 .clip(KEY_SHAPE)
                 .background(if (pressed) kb.pressed else if (function) kb.functionKey else kb.key)
                 .then(touch),

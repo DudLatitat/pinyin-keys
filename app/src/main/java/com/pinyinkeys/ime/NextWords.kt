@@ -16,12 +16,18 @@ class NextWords(private val context: Context) {
     // context -> up to 3 common next words, from the bundled phrase table
     private val phrases = HashMap<String, List<String>>(60_000)
     private var dirty = false
+    /** How often you've typed each word (lowercase), for ranking your own words higher. */
+    private val wordCounts = HashMap<String, Int>()
 
     fun load() {
         learned.clear()
         Settings(context).nextWordData.split('\n').forEach { line ->
             val parts = line.split('\t')
             if (parts.size == 3) learned.getOrPut(parts[0]) { HashMap() }[parts[1]] = parts[2].toIntOrNull() ?: 1
+        }
+        wordCounts.clear()
+        for ((ctx, m) in learned) if (' ' !in ctx) for ((w, c) in m) {
+            wordCounts[w.lowercase()] = (wordCounts[w.lowercase()] ?: 0) + c
         }
         context.assets.open("en_phrases.txt").bufferedReader().useLines { lines ->
             lines.forEach { line ->
@@ -38,6 +44,7 @@ class NextWords(private val context: Context) {
             val m = learned.getOrPut(ctx) { HashMap() }
             m[next] = (m[next] ?: 0) + 1
         }
+        wordCounts[next.lowercase()] = (wordCounts[next.lowercase()] ?: 0) + 1
         dirty = true
     }
 
@@ -50,6 +57,19 @@ class NextWords(private val context: Context) {
         for (c in ctx) phrases[c]?.let { out += it }
         out += DEFAULTS
         return out.take(n)
+    }
+
+    /**
+     * Boosts for completing the word being typed: likely next words after [before] (from
+     * your habits and the phrase table) and words you type often.
+     */
+    fun boosts(before: List<String>): Map<String, Double> {
+        val out = HashMap<String, Double>()
+        predict(before, 25).forEachIndexed { i, w -> out[w.lowercase()] = 90.0 - i * 3 }
+        for ((w, c) in wordCounts) if (c >= 2) {
+            out[w] = (out[w] ?: 0.0) + minOf(60.0, c * 6.0)
+        }
+        return out
     }
 
     /** "w1 w2" and "w2" for the last two words ("^" = start of sentence). */

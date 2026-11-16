@@ -338,6 +338,18 @@ class PinyinKeysService : InputMethodService(),
         }
 
         val c = text.singleOrNull()
+        // After a picked suggestion (which added a space), punctuation replaces that space:
+        // "word ." becomes "word. "
+        val wasAutoSpaced = autoSpaced
+        autoSpaced = false
+        if (wasAutoSpaced && c != null && c in ".,?!:;") {
+            ic.deleteSurroundingText(1, 0)
+            ic.commitText("$c ", 1)
+            if (c in ".?!") sentence.clear()
+            suggestions.value = if (suggestionsAllowed()) nextWords?.predict(sentence) ?: emptyList() else emptyList()
+            updateAutoCaps()
+            return
+        }
         lastAutocorrect = null
         if (c != null && (c.isLetter() || (c == '\'' && currentWord.isNotEmpty()))) {
             // A letter: part of the current word. Update suggestions for it.
@@ -392,10 +404,17 @@ class PinyinKeysService : InputMethodService(),
         val now = android.os.SystemClock.uptimeMillis()
         val repeating = now - lastBackspaceAt < 150
         lastBackspaceAt = now
+        if (!repeating) backspaceHoldStart = now
         if (repeating) {
             // Held backspace: just delete. Each question to the other app (selection,
             // capitals) is a round trip, and skipping them keeps the repeat fast.
-            ic.deleteSurroundingText(1, 0)
+            // After 1.5 s of holding, delete whole words instead of letters.
+            if (now - backspaceHoldStart > 1500) {
+                val before = ic.getTextBeforeCursor(50, 0)?.toString() ?: ""
+                val trimmed = before.trimEnd()
+                val wordStart = trimmed.lastIndexOfAny(charArrayOf(' ', '\n')) + 1
+                ic.deleteSurroundingText(maxOf(1, before.length - wordStart), 0)
+            } else ic.deleteSurroundingText(1, 0)
             pendingCapsCheck = true
             mainHandler.removeCallbacks(capsAfterRepeat)
             mainHandler.postDelayed(capsAfterRepeat, 200)
@@ -408,6 +427,7 @@ class PinyinKeysService : InputMethodService(),
     }
 
     private var lastBackspaceAt = 0L
+    private var backspaceHoldStart = 0L
 
     /**
      * Puts back what was typed before the last autocorrect (backspace right after it, or
@@ -452,9 +472,11 @@ class PinyinKeysService : InputMethodService(),
         val dict = english
         val word = currentWord
         if (!suggestionsAllowed() || dict == null || word.isEmpty()) { suggestions.value = emptyList(); return }
+        // Boosts from the sentence so far and your own word habits (copied for the background thread).
+        val boosts = nextWords?.boosts(sentence.toList()) ?: emptyMap()
         suggestJob = lifecycleScope.launch {
             val list = withContext(Dispatchers.Default) {
-                val s = dict.suggest(word)
+                val s = dict.suggest(word, boost = boosts)
                 // Not a known word: also offer exactly what was typed (shown in quotes), so
                 // it can be kept as-is instead of being "corrected".
                 if (word.length >= 2 && !dict.isWord(word)) {
@@ -511,6 +533,9 @@ class PinyinKeysService : InputMethodService(),
     }
 
     /** A suggestion tapped: replace the word being typed (or add the next word) + space. */
+    /** True right after a picked suggestion added a space (see smart punctuation). */
+    private var autoSpaced = false
+
     /** When this keyboard last changed the text in a way that moves the cursor a lot. */
     private var lastOwnEditAt = 0L
     private fun markOwnEdit() { lastOwnEditAt = android.os.SystemClock.uptimeMillis() }
@@ -521,6 +546,7 @@ class PinyinKeysService : InputMethodService(),
         val word = if (picked.startsWith(LITERAL)) picked.removePrefix(LITERAL).also(::keepWord) else picked
         if (currentWord.isNotEmpty()) ic.deleteSurroundingText(currentWord.length, 0)
         ic.commitText("$word ", 1)
+        autoSpaced = true
         currentWord = ""
         lastAutocorrect = null
         nextWords?.learn(sentence, word)
@@ -778,8 +804,18 @@ class PinyinKeysService : InputMethodService(),
     // --- Shift and Chinese mode ---
 
     /** Shift key: off -> one capital -> caps lock -> off. */
+    private var lastShiftTap = 0L
+
+    /** Shift: tap = one capital, double-tap = caps lock, tap again = off. */
     private fun cycleShift() {
-        shift.value = when (shift.value) { Shift.Off -> Shift.On; Shift.On -> Shift.Lock; Shift.Lock -> Shift.Off }
+        val now = android.os.SystemClock.uptimeMillis()
+        val doubleTap = now - lastShiftTap < 350
+        lastShiftTap = now
+        shift.value = when {
+            shift.value == Shift.Off -> Shift.On
+            shift.value == Shift.On && doubleTap -> Shift.Lock
+            else -> Shift.Off
+        }
     }
 
     /**
