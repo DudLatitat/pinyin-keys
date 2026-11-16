@@ -13,7 +13,7 @@ interface TranslationService {
      */
     fun translateLines(
         lines: List<String>,
-        polite: Boolean = false,
+        tone: Tone = Tone.Casual,
         onLine: (Int, Sentence) -> Unit = { _, _ -> },
     ): List<Sentence>
 

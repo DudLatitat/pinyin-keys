@@ -65,10 +65,11 @@ class Settings(context: Context) {
         get() = prefs.getString("next_words", "") ?: ""
         set(v) = prefs.edit().putString("next_words", v).apply()
 
-        /** Translate in a polite tone (elders, strangers) instead of casual. */
-    var polite: Boolean
-        get() = prefs.getBoolean("polite", false)
-        set(v) = prefs.edit().putBoolean("polite", v).apply()
+    /** Translation tone: casual (default), slang or polite. */
+    var tone: com.pinyinkeys.ime.translate.Tone
+        get() = prefs.getString("tone", null)?.let { n -> com.pinyinkeys.ime.translate.Tone.entries.firstOrNull { it.name == n } }
+            ?: if (prefs.getBoolean("polite", false)) com.pinyinkeys.ime.translate.Tone.Polite else com.pinyinkeys.ime.translate.Tone.Casual
+        set(v) = prefs.edit().putString("tone", v.name).apply()
 
         /** Keyboard theme name (see THEMES), or "System" to follow the phone's dark mode. */
     var theme: String

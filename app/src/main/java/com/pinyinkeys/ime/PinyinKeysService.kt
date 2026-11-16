@@ -63,7 +63,7 @@ class PinyinKeysService : InputMethodService(),
     /** Label for the enter key, from what the app asks for (Done, Next, Go, Send...). */
     private val enterLabel = mutableStateOf<String?>(null)
     /** Polite tone for translations (toolbar 随/敬). */
-    private val polite = mutableStateOf(false)
+    private val tone = mutableStateOf(com.pinyinkeys.ime.translate.Tone.Casual)
     private val theme = mutableStateOf("System")
 
     /** What the Assist panel shows. Compose redraws whenever this changes. */
@@ -145,7 +145,7 @@ class PinyinKeysService : InputMethodService(),
             val s = withContext(Dispatchers.IO) { Settings(this@PinyinKeysService) }
             recentEmoji.value = s.recentEmoji
             pinnedClips.value = s.pinnedClips
-            polite.value = s.polite
+            tone.value = s.tone
             clipHistory.value = s.clipHistory
         }
         // Get told about each new copy (Android allows this for the keyboard in use).
@@ -219,7 +219,7 @@ class PinyinKeysService : InputMethodService(),
                     numberPad = numberPad.value,
                     enterLabel = enterLabel.value,
                     onCursorMove = ::moveCursor,
-                    polite = polite.value,
+                    tone = tone.value,
                     onTogglePolite = ::togglePolite,
                     onExplain = ::explainCopied,
                     theme = theme.value,
@@ -966,7 +966,7 @@ class PinyinKeysService : InputMethodService(),
             assistState.value = try {
                 // Dispatchers.IO: network must not run on the main (UI) thread.
                 val result = withContext(Dispatchers.IO) {
-                    Translator(this@PinyinKeysService, service, polite.value).translate(text) { i, sentence ->
+                    Translator(this@PinyinKeysService, service, tone.value).translate(text) { i, sentence ->
                         // Called on a background thread as each sentence is ready: show it right away.
                         mainHandler.post {
                             if (translateJob != job || job?.isActive != true) return@post
@@ -1107,10 +1107,11 @@ class PinyinKeysService : InputMethodService(),
     }
 
     private fun togglePolite() {
-        polite.value = !polite.value
-        val v = polite.value
-        lifecycleScope.launch(Dispatchers.IO) { Settings(this@PinyinKeysService).polite = v }
-        toast(if (v) "Polite tone (敬) for translations" else "Casual tone (随) for translations")
+        // Cycles 随 casual → 俏 slang → 敬 polite.
+        tone.value = tone.value.next()
+        val v = tone.value
+        lifecycleScope.launch(Dispatchers.IO) { Settings(this@PinyinKeysService).tone = v }
+        toast("${v.label} tone (${v.icon}) for translations")
     }
 
     /**
@@ -1173,7 +1174,7 @@ class PinyinKeysService : InputMethodService(),
             val result = onDemand("Couldn't start practice. Try again.") { cache, service ->
                 strictTones = Settings(this@PinyinKeysService).strictTones
                 val svc = service()
-                val sentences = Translator(this@PinyinKeysService, svc, polite.value).translate(text)
+                val sentences = Translator(this@PinyinKeysService, svc, tone.value).translate(text)
                 val units = sentences.map { s ->
                     val d = cache.getDetails(s) ?: svc.details(s).also { cache.putDetails(s, it) }
                     Practice.buildUnits(s, d)

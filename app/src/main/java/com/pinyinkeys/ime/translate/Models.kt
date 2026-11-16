@@ -31,6 +31,15 @@ data class SentenceDetails(
 )
 
 /** What the model returns per numbered input line (the English is already known). */
+/** How translations should sound. */
+enum class Tone(val icon: String, val label: String) {
+    Casual("随", "Casual"),
+    Slang("俏", "Slang"),
+    Polite("敬", "Polite");
+
+    fun next(): Tone = entries[(ordinal + 1) % entries.size]
+}
+
 @Serializable
 data class LineResult(val hanzi: String, val pinyin: String)
 

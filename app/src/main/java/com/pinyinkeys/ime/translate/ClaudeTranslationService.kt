@@ -34,11 +34,15 @@ class ClaudeTranslationService(
         }
     }
 
-    override fun translateLines(lines: List<String>, polite: Boolean, onLine: (Int, Sentence) -> Unit): List<Sentence> {
+    override fun translateLines(lines: List<String>, tone: Tone, onLine: (Int, Sentence) -> Unit): List<Sentence> {
         // Stream the reply and hand over each line as soon as it's complete.
         val scanner = JsonItemScanner()
         var index = 0
-        val system = if (polite) Prompts.TRANSLATE_SYSTEM + "\n\n" + Prompts.POLITE_NOTE else Prompts.TRANSLATE_SYSTEM
+        val system = when (tone) {
+            Tone.Casual -> Prompts.TRANSLATE_SYSTEM
+            Tone.Slang -> Prompts.TRANSLATE_SYSTEM + "\n\n" + Prompts.SLANG_NOTE
+            Tone.Polite -> Prompts.TRANSLATE_SYSTEM + "\n\n" + Prompts.POLITE_NOTE
+        }
         val text = call(system, Prompts.numberedLines(lines), Prompts.TRANSLATE_SCHEMA, maxTokens = 8000) { delta ->
             scanner.append(delta).forEach { item ->
                 val r = runCatching { json.decodeFromString(LineResult.serializer(), item) }.getOrNull()

@@ -16,6 +16,14 @@ object Prompts {
         - Output only the JSON object.
     """.trimIndent()
 
+    /** Added to the translate instructions for the extra-casual / slang tone. */
+    val SLANG_NOTE = """
+        Tone override: the reader is texting a very close friend or partner. Use relaxed
+        texting style and common internet slang where it fits naturally (哈哈, 嗯嗯, 咋了, 啥,
+        咋整, 绝了, 笑死, 好滴, 酱紫, 木有, playful particles like 啦/嘛/呀/哒). Keep it natural
+        and kind; don't force slang into every sentence.
+    """.trimIndent()
+
     /** Added to the translate instructions when the polite tone is chosen. */
     val POLITE_NOTE = """
         Tone override: the reader is writing to an elder, a stranger or someone they should be

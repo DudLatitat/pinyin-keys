@@ -14,8 +14,8 @@ import com.pinyinkeys.ime.translate.TranslationService
 class Translator(
     private val context: Context,
     private val service: TranslationService,
-    /** Polite tone (elders, strangers): skips the casual phrasebook, cached separately. */
-    private val polite: Boolean = false,
+    /** Tone: only Casual uses the (casual) phrasebook; each tone is cached separately. */
+    private val tone: com.pinyinkeys.ime.translate.Tone = com.pinyinkeys.ime.translate.Tone.Casual,
 ) {
 
     /** [onSentence] gets (index, sentence) as each one becomes available, in any order. */
@@ -26,14 +26,15 @@ class Translator(
         val out = arrayOfNulls<Sentence>(lines.size)
         val misses = ArrayList<Int>()
         lines.forEachIndexed { i, line ->
-            val known = (if (polite) null else Phrasebook.get(context, line)) ?: cache.getTranslation(key(line))
+            val casual = tone == com.pinyinkeys.ime.translate.Tone.Casual
+            val known = (if (casual) Phrasebook.get(context, line) else null) ?: cache.getTranslation(key(line))
             if (known != null) {
                 out[i] = known
                 onSentence(i, known)
             } else misses += i
         }
         if (misses.isNotEmpty()) {
-            val fresh = service.translateLines(misses.map { lines[it] }, polite) { j, s -> onSentence(misses[j], s) }
+            val fresh = service.translateLines(misses.map { lines[it] }, tone) { j, s -> onSentence(misses[j], s) }
             fresh.forEachIndexed { j, s ->
                 out[misses[j]] = s
                 cache.putTranslation(key(lines[misses[j]]), s.copy(en = lines[misses[j]]))
@@ -42,8 +43,12 @@ class Translator(
         return out.map { it ?: throw TranslationException("Couldn't translate. Try again.") }
     }
 
-    /** Polite translations are cached under a different key from casual ones. */
-    private fun key(line: String) = if (polite) "[polite] $line" else line
+    /** Each tone's translations are cached under their own key ("[polite] ...", "[slang] ..."). */
+    private fun key(line: String) = when (tone) {
+        com.pinyinkeys.ime.translate.Tone.Casual -> line
+        com.pinyinkeys.ime.translate.Tone.Slang -> "[slang] $line"
+        com.pinyinkeys.ime.translate.Tone.Polite -> "[polite] $line"
+    }
 
     companion object {
         /** Splits after . ! ? (and line breaks), keeping the punctuation with its sentence. */

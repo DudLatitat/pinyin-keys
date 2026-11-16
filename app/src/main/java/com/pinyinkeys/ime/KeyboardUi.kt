@@ -211,7 +211,7 @@ fun KeyboardUi(
     numberPad: NumberPadKind?,
     enterLabel: String?,
     onCursorMove: (Int) -> Unit,
-    polite: Boolean,
+    tone: com.pinyinkeys.ime.translate.Tone,
     onTogglePolite: () -> Unit,
     onExplain: () -> Unit,
     theme: String,
@@ -250,7 +250,7 @@ fun KeyboardUi(
                     (mode == Mode.Assist || practice is PracticeState.Idle) && suggestions.isNotEmpty()
                 ) SuggestionBar(suggestions, onShowTools, onSuggestion)
                 else Toolbar(sensitive || numberPad != null, mode, onMode, assist, onTranslate, onInsertChinese,
-                    practice, onStartPractice, onHint, panelShown, togglePanel, onOpenSettings, polite, onTogglePolite, onExplain,
+                    practice, onStartPractice, onHint, panelShown, togglePanel, onOpenSettings, tone, onTogglePolite, onExplain,
                     showPasteChip && !sensitive, onPasteChip)
             }
             val panel: @Composable () -> Unit = {
@@ -328,7 +328,7 @@ private fun Toolbar(
     panel: Panel,
     onPanel: (Panel) -> Unit,
     onOpenSettings: () -> Unit,
-    polite: Boolean,
+    tone: com.pinyinkeys.ime.translate.Tone,
     onTogglePolite: () -> Unit,
     onExplain: () -> Unit,
     showPasteChip: Boolean,
@@ -358,9 +358,9 @@ private fun Toolbar(
                 Mode.Practice -> IconPill(if (practice is PracticeState.Active) "↻" else "译", false, onClick = onStartPractice)
             }
             if (mode == Mode.Assist && !loading) {
-                // 解 = explain a copied Chinese message; 随/敬 = casual or polite translations.
+                // 解 = explain a copied Chinese message; 随/俏/敬 = casual, slang or polite.
                 IconPill("解", false, onClick = onExplain)
-                IconPill(if (polite) "敬" else "随", polite, onClick = onTogglePolite)
+                IconPill(tone.icon, tone != com.pinyinkeys.ime.translate.Tone.Casual, onClick = onTogglePolite)
             }
             if (mode == Mode.Assist && assist is AssistState.Result && assist.complete) Pill("Insert", accent = true, onClick = onInsertChinese)
             if (mode == Mode.Practice && practice is PracticeState.Active && !practice.done) Pill("Hint", onClick = onHint)
