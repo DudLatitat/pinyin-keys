@@ -3,6 +3,10 @@ A personal Android keyboard that shows Chinese and pinyin for the English you ty
 **Install:** download `pinyin-keys-<version>.apk` below, open it on the phone, then turn on
 Pinyin Keys in the system keyboard settings. Add your Claude API key in the Pinyin Keys app.
 
+## New in 1.1.3
+- Always know which mode you're in: the space bar says "English" or "拼音", the 中/En key
+  lights up in Chinese mode, and a big 中 / EN flashes when you switch.
+
 ## New in 1.1.2
 - Keys shrink slightly and spring back when pressed.
 - Smarter word completions: they use the sentence so far ("I miss y" → you) and favour

@@ -443,6 +443,16 @@ private fun Keys(
     onCursorMove: (Int) -> Unit,
 ) {
     val kb = LocalKb.current
+    // Briefly show a big "中" or "EN" over the keys after switching language.
+    var flash by remember { mutableStateOf<String?>(null) }
+    var firstRun by remember { mutableStateOf(true) }
+    LaunchedEffect(chinese) {
+        if (firstRun) { firstRun = false; return@LaunchedEffect }
+        flash = if (chinese) "中" else "EN"
+        delay(700)
+        flash = null
+    }
+    Box {
     Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
         KeyRow { NUMBER_ROW.forEach { c -> Key(c.toString(), preview = true, height = LocalKeyHeights.current.number, fontSize = 19) { onText(c.toString()) } } }
         if (page == 0) {
@@ -478,10 +488,24 @@ private fun Keys(
             Key(if (chinese) "，" else ",", 1f) { onText(",") }
             // Slide along the space bar to move the cursor.
             // Space on a symbols page goes back to the letters (like other keyboards).
-            Key("␣", 4.4f, onCursor = onCursorMove) { onText(" "); if (page != 0) onPage(0) }
+            // The space bar names the current language, like other keyboards.
+            Key(if (chinese) "拼音" else "English", 4.4f, onCursor = onCursorMove, fontSize = 14,
+                labelColor = kb.label.copy(alpha = 0.55f)) { onText(" "); if (page != 0) onPage(0) }
             Key(if (chinese) "。" else ".", 1f, alternates = PERIOD_ALTERNATES, onAlternate = onText) { onText(".") }
             Key("⏎", 1.4f, function = true, onClick = onEnter)
         }
+    }
+    androidx.compose.animation.AnimatedVisibility(
+        visible = flash != null,
+        modifier = Modifier.align(Alignment.Center),
+        enter = fadeIn(tween(120)) + androidx.compose.animation.scaleIn(tween(160), initialScale = 0.7f),
+        exit = fadeOut(tween(250)),
+    ) {
+        Box(
+            Modifier.size(96.dp).clip(RoundedCornerShape(20.dp)).background(kb.accent.copy(alpha = 0.92f)),
+            contentAlignment = Alignment.Center,
+        ) { Text(flash ?: "", fontSize = 40.sp, color = Color.White, fontWeight = FontWeight.Bold) }
+    }
     }
 }
 
@@ -500,14 +524,15 @@ private fun RowScope.LanguageKey(chinese: Boolean, onClick: () -> Unit) {
             .weight(1f)
             .height(LocalKeyHeights.current.key)
             .clip(KEY_SHAPE)
-            .background(kb.functionKey)
+            // Lit up in the accent color while typing Chinese, so the mode is obvious.
+            .background(if (chinese) kb.accent else kb.functionKey)
             .clickable {
                 view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
                 onClick()
             },
     ) {
-        val on = kb.label
-        val off = kb.label.copy(alpha = 0.4f)
+        val on = if (chinese) Color.White else kb.label
+        val off = (if (chinese) Color.White else kb.label).copy(alpha = 0.45f)
         // "中" top-left, "/" in the middle, "En" bottom-right, each small enough not to overlap.
         Row(Modifier.align(Alignment.Center), verticalAlignment = Alignment.CenterVertically) {
             Text("中", fontSize = 11.sp, color = if (chinese) on else off,
