@@ -53,6 +53,11 @@
 - 1.1.0: 解 explainChinese (clipboard on tap -> sentences + reply), polite tone (Settings.polite,
   separate cache keys, no phrasebook), space-bar cursor slide and long-press alternates
   (Key onCursor/alternates in KeyboardUi.kt), phrasebook ~430 lines.
+- 1.1.1–1.1.4 (owner-tested, working): themes (THEMES in KeyboardUi.kt, Settings.theme),
+  key press animation, context-boosted completions (NextWords.boosts), double-tap caps,
+  smart punctuation, long-backspace word delete, language indicators (space bar label,
+  lit 中 key, flash), Tone enum 随/俏/敬 (casual/slang/polite, separate cache keys).
+- Suggested next: tests + split PinyinKeysService.kt + privacy review; then flashcards.
 - App icon: adaptive vector (white key with 中 on blue), with a monochrome layer.
 - Releases (owner: no prereleases): every signed CI build publishes a full release
   `v<versionName>` with RELEASE_NOTES.md, skipping if that version already exists. Bump
