@@ -3,6 +3,10 @@ A personal Android keyboard that shows Chinese and pinyin for the English you ty
 **Install:** download `pinyin-keys-<version>.apk` below, open it on the phone, then turn on
 Pinyin Keys in the system keyboard settings. Add your Claude API key in the Pinyin Keys app.
 
+## New in 1.1.8
+- Going back to a finished word (backspace into it, or tap at its end) brings back its
+  suggestions and autocorrect, instead of starting fresh.
+
 ## New in 1.1.7
 - Fixed keys (like "o") sometimes staying stuck highlighted after typing.
 

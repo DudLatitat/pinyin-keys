@@ -434,6 +434,8 @@ class PinyinKeysService : InputMethodService(),
         val selected = ic.getSelectedText(0)
         if (!selected.isNullOrEmpty()) ic.commitText("", 1) else ic.deleteSurroundingText(1, 0)
         updateAutoCaps()
+        // Backspaced into the end of an earlier word: pick it back up.
+        if (currentWord.isEmpty()) recoverWord()
     }
 
     private var lastBackspaceAt = 0L
@@ -583,8 +585,33 @@ class PinyinKeysService : InputMethodService(),
                 currentWord = ""
                 lastAutocorrect = null
                 suggestions.value = emptyList()
+                // Tapped back onto the end of a word: pick that word up again.
+                if (newSelStart == newSelEnd) recoverWord()
             }
         }
+    }
+
+    /**
+     * If the cursor sits right at the end of a word (and not in the middle of one), read
+     * that word and the two before it back from the text box, so suggestions and
+     * autocorrect continue on it. Reads a little text before the cursor; called only after
+     * your own backspace or cursor move.
+     */
+    private fun recoverWord() {
+        if (!suggestionsAllowed() || chinese.value) return
+        val ic = currentInputConnection ?: return
+        val after = ic.getTextAfterCursor(1, 0)?.toString() ?: ""
+        if (after.firstOrNull()?.let { it.isLetter() || it == '\'' } == true) return  // mid-word
+        val before = ic.getTextBeforeCursor(80, 0)?.toString() ?: return
+        val word = before.takeLastWhile { it.isLetter() || it == '\'' }
+        if (word.isEmpty() || word.length > 30) return
+        currentWord = word
+        // Context: the last two words before it in the same sentence.
+        val rest = before.dropLast(word.length)
+        val clause = rest.substringAfterLast('.').substringAfterLast('?').substringAfterLast('!')
+        sentence.clear()
+        Regex("[A-Za-z']+").findAll(clause).map { it.value }.toList().takeLast(2).forEach { sentence += it }
+        updateSuggestions()
     }
 
     /** Short preview for the Paste button: start of the text, or "Image". */
