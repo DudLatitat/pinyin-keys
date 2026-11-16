@@ -638,7 +638,6 @@ private fun SentenceCard(
                     else -> SmallIcon(if (saved is Load.Loaded) "★" else "☆", enabled = saved !is Load.Loaded, onClick = onSave)
                 }
             }
-            }
         }
         if (saved is Load.Error) Text(saved.message, fontSize = 13.sp, color = MaterialTheme.colorScheme.error)
         if (!expanded) return@Column
