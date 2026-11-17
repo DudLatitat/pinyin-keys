@@ -1,173 +1,95 @@
-# Handoff: WeChat Pinyin Keyboard (Android)
+# Handoff: Pinyin Keys (Android keyboard)
 
-## Status (start here)
-- Done: repo, rules, Milestone 1 code (Compose QWERTY IME, switch-back key, setup
-  screen) and a CI workflow that builds a debug APK and publishes it as a prerelease.
-- Milestone 1 tested in WeChat by the owner: works. Signed release builds work in CI.
-- Milestone 2 code written: settings screen (API key in EncryptedSharedPreferences, base URL,
-  model), Translate button, sentence cards, Insert Chinese. Raw HTTPS to the Messages API with
-  structured outputs (json_schema) and effort=low. Tested by the owner in WeChat: works.
-- Milestone 3 code written: tap a card for structure chips, "Why?" fetched on tap and cached
-  encrypted on the phone (SentenceCache, keyed by SHA-256 of the sentence). Tested: works.
-- Speed: thinking disabled; Translate returns only en/hanzi/pinyin. Chunks + syllables load
-  when a card is opened (cached like Why). Translate went from 6-9 s to about 2 s.
-- Milestone 4 code written (Practice.kt + PracticePanel): Assist/Practice toggle, syllable
-  matching (tones optional, setting to require them; v or u for ü), auto punctuation, Hint,
-  Restart. Backspace in Practice only edits the pinyin buffer. Tested by the owner: works.
-- Milestone 5 code written: ☆ on each Assist card saves en/hanzi/pinyin/chunksJson/savedAt to
-  Room (saved/SavedSentences.kt); "Saved sentences" screen in the app with Delete. Tested: works.
-- Keyboard polish (written, untested): number row on top, key preview popup, held backspace
-  repeats, tap haptics, auto-capitalize via getCursorCapsMode, double-space period, shift
-  cycles off/one/lock. Wide screens (>= 600dp): keys centred at 88% width, taller (KeyHeights).
-- Chinese typing mode ("En/中" key): pinyin composing text + candidate bar from
-  PinyinDictionary (exact, prefix completions, then leading-part matches). Space takes the
-  top candidate, enter keeps raw letters, Chinese punctuation in this mode.
-- Look: restyled like a standard phone keyboard (KbColors in KeyboardUi.kt). Globe key removed
-  at the owner's request; switching keyboards uses the system's keyboard button.
-- Speed: keys fire on touch-down (pointerInput), profileinstaller added, auto-caps only asks
-  the app after non-letters, HTTP connection reused (no disconnect), and Translate streams
-  (SSE) so cards appear one by one (JsonItemScanner). Insert waits for the full result.
-- Toolbar icons open panels in place of the keys (Panels.kt): emoji (Emoji.kt, recents),
-  clipboard (reads the clip only when the panel is opened; pinned snippets stored encrypted;
-  no background clipboard history, per CLAUDE.md), text editing (arrows, select/cut/copy/paste),
-  settings shortcut. Clipboard panel is hidden in password fields.
-- Emoji/clipboard restyled like the owner's default keyboard (panel header replaces toolbar,
-  big emoji grid, clipboard card grid). "📋 Paste" chip: on keyboard open, only the clip's
-  timestamp (ClipDescription) is checked; the text is read only when Paste is tapped.
-  Clipboard history (owner's decision, CLAUDE.md updated): last 15 copies captured with
-  OnPrimaryClipChangedListener; text in encrypted prefs, images copied to filesDir/clips and
-  pasted via commitContent + FileProvider. Sensitive clips and password fields are skipped.
-- Screenshot suggestion (opt-in setting + READ_MEDIA_IMAGES): newest image in a Screenshots
-  folder from the last minute is offered via the Paste chip (Screenshots.kt); a MediaStore
-  ContentObserver runs only while the keyboard is shown. Copied only when Paste is tapped.
-- Ribbon: suggestions while typing / next-word after space / Paste chip with preview / tools
-  (‹ shows tools). EnglishDictionary (assets/en_words.txt from AOSP LatinIME, Apache 2.0)
-  gives completions + typo corrections (keyboard-neighbour edits); autocorrect on space
-  (setting, on by default; backspace undoes). NextWords predicts from the last two words:
-  learned-on-device first, then assets/en_phrases.txt (Tatoeba, CC BY 2.0 FR, built by
-  tools/build_phrase_table.py), then common starters.
-- Translate speed: Translator.kt splits sentences locally, answers from Phrasebook
-  (assets/phrasebook.tsv, hand-written) or SentenceCache ("tr:" entries), and sends only
-  misses as numbered lines (model returns hanzi+pinyin per line). warmUp() = GET /v1/models
-  on keyboard open (no text; CLAUDE.md exception).
-- 1.1.0: 解 explainChinese (clipboard on tap -> sentences + reply), polite tone (Settings.polite,
-  separate cache keys, no phrasebook), space-bar cursor slide and long-press alternates
-  (Key onCursor/alternates in KeyboardUi.kt), phrasebook ~430 lines.
-- 1.1.1–1.1.4 (owner-tested, working): themes (THEMES in KeyboardUi.kt, Settings.theme),
-  key press animation, context-boosted completions (NextWords.boosts), double-tap caps,
-  smart punctuation, long-backspace word delete, language indicators (space bar label,
-  lit 中 key, flash), Tone enum 随/俏/敬 (casual/slang/polite, separate cache keys).
-- 1.2.0 autocorrect: TouchTracker (tap offset per key) -> EnglishDictionary.subCost uses
-  key geometry (KEY_POS); learnedFixes (typo->fix, Settings.learnedFixes); auto-keep words
-  typed >= 2 times; 2-slip corrections for 5+ letter words; context boosts in autocorrect.
-- Suggested next: tests + split PinyinKeysService.kt + privacy review; then flashcards.
-- App icon: adaptive vector (white key with 中 on blue), with a monochrome layer.
-- Releases (owner: no prereleases): every signed CI build publishes a full release
-  `v<versionName>` with RELEASE_NOTES.md, skipping if that version already exists. Bump
-  versionName in app/build.gradle.kts and update RELEASE_NOTES.md for each release.
-  versionCode = GitHub run number.
-  - Signing: keystore generated; CI signs the release when SIGNING_* Actions secrets are set.
-- No Android SDK in the cloud workspace: app code is compiled only by CI. Read build
-  failures from the workflow's job annotations/logs.
-- Work in this repo only. Do not read or reference any other repository.
+Read **CLAUDE.md first**. Its privacy and public-repo rules override everything here.
 
-## What this is
-A personal Android keyboard app (single user, not for distribution). While typing English in a chat app such as WeChat, it shows the Chinese translation and pinyin for each sentence. It can also coach the user to type the Chinese themselves in pinyin. Tapping a sentence shows a short breakdown of its structure.
+## What it is
+A personal Android keyboard (IME) for one owner who is learning Mandarin and chats in apps
+like WeChat. The owner types English. The keyboard shows and inserts casual Mandarin with
+pinyin, and also helps them practise typing it. The owner is new to Android, so keep the
+code readable and add short comments for non-obvious Android concepts.
 
-The user is a beginner in Chinese and new to Android development. Keep the code readable, and explain non-obvious Android concepts in short code comments.
+## Status
+- **Current version:** 1.3.0. It is released as `v1.3.0` on GitHub Releases, built and
+  signed by CI. Everything listed below is built, and the owner has tested most of it on
+  their phone.
+- **Work branch:** `claude/milestone-1-translation-jeovyb`. PR #1 into `main` is open, and
+  the owner merges it themselves.
+- **Your job:** push only to that branch. Don't open new PRs unless the owner asks.
 
-Target device: a foldable phone. The layout must work on both the narrow cover screen and the wide inner screen.
+## Features (where to look)
+| Feature | Files |
+|---|---|
+| IME service: all state, typing, autocorrect flow, clipboard, warm-up | `PinyinKeysService.kt` (large; splitting it is a good cleanup) |
+| All keyboard UI in Compose: keys, toolbar, suggestion/candidate/correction/paste bars, Assist and Practice panels, themes | `KeyboardUi.kt` |
+| Emoji, clipboard and edit panels; number pad | `Panels.kt`, `Emoji.kt`, `Clips.kt`, `NumberPad.kt` |
+| **Assist (助):** 译 Translate sends the English, then shows one card per sentence (hanzi, pinyin, English). Tapping a card shows word chips (meaning, tap to hear) and "Why?". Insert replaces the English with the Chinese. ☆ saves the sentence, 🔊 speaks it (`Speech.kt`, phone TTS). | `Translator.kt`, `translate/*`, `AssistState.kt` |
+| **Tone button:** 随 casual → 俏 slang → 敬 polite. Each tone is cached separately. | `translate/Prompts.kt` |
+| **解 Explain:** copy a Chinese message, tap 解. Shows sentences with pinyin and English, plus a suggested reply. | same |
+| **Practice (练):** the Chinese is hidden, and the owner types each syllable in pinyin. Tones are optional (a setting can require them). | `Practice.kt` |
+| **Guided typing:** after translating, tap 中. The English is cleared and the owner types the Chinese in pinyin with the cards still visible; each card shows ✓ when done. | service + `KeyboardUi.kt` |
+| **Chinese typing (中/En key):** offline pinyin → characters. Picks whole phrases by DP segmentation. Dictionary data from AOSP PinyinIME (Apache 2.0). | `PinyinDictionary.kt` |
+| **English suggestions and autocorrect:** offline. Wordlist from AOSP LatinIME (Apache 2.0). Corrections use where the finger touched each key plus the owner's learned per-key touch bias. Also apostrophe fixes, learned fixes, user words, and a "keep as typed" option. | `EnglishDictionary.kt`, `TouchTracker.kt` |
+| **Next-word and phrase prediction:** learned word pairs plus a phrase table from Tatoeba (CC BY 2.0 FR). | `NextWords.kt`, `assets/en_phrases.txt` |
+| **Saved sentences:** stored in Room and browsed in the app | `saved/*` |
+| **Settings app:** API key, base URL and model; theme; typing options; "What I've learned"; screenshot opt-in | `SetupActivity.kt`, `Settings.kt` |
 
-## Core decisions (already made)
-1. **Build a custom keyboard (IME), not an overlay.** Use `InputMethodService`. Don't use an accessibility service or screen reading.
-2. **Two modes, switched with a toggle at the top of the keyboard panel:**
-   - **Assist:** shows the Chinese and pinyin. An "Insert Chinese" button replaces the English in the text field with the Chinese.
-   - **Practice:** hides the Chinese. The user types each syllable in pinyin, and the keyboard checks it against the target and commits the correct character when it matches. Show a "Next: nǐ"-style prompt and a hint button. This is NOT a general pinyin IME: the target sentence is already known, so matching is only against the expected syllable, and no dictionary is needed.
-3. **Explanations stay out of the way.** By default each sentence card shows only the Chinese and pinyin.
-   - Tap a sentence → a row of chips showing its structure, e.g. `我 · Subject` `想 · Verb` `你 · Object` `了 · New state`.
-   - Tap "Why?" → one or two sentences explaining the structure. Fetch this lazily, only when "Why?" is tapped.
-   - Tap the sentence again → collapse it.
-4. **Casual tone by default.** The messages are casual texts to close friends and family, so translations should be natural spoken Mandarin, not textbook phrasing.
+## How translation works (speed matters to the owner)
+1. Split the text into sentences locally.
+2. For each sentence, check `assets/phrasebook.tsv` (about 430 casual sentences, instant, offline).
+3. Then check `SentenceCache`: encrypted, with keys prefixed by tone.
+4. Send only the misses to the Claude Messages API in a single request:
+   - Raw `HttpURLConnection`, SSE streaming.
+   - Structured output (`json_schema`), effort low, thinking disabled.
+   - Default model `claude-haiku-5-5`, and the owner can change it in settings.
+   - Cards appear as they stream, via `JsonItemScanner`.
+5. Word breakdown and "Why?" are fetched only when a card is tapped, then cached.
 
-## UI reference
-The user approved a mockup with these elements, from top to bottom:
-- A row with the mode toggle (Assist / Practice)
-- A list of sentence cards, each showing hanzi (large) and pinyin with tone marks (accent color) under it, expanding to structure chips and then "Why?"
-- An action row: "Insert Chinese" (Assist) or a progress/hint bar (Practice)
-- A QWERTY key grid
-- Also add: a key to switch back to the previous keyboard (`switchToPreviousInputMethod()`), plus backspace, space, and enter.
+Result: about 2 s for new text, instant for repeats.
 
-## Suggested stack
-- Kotlin with Jetpack Compose for the keyboard UI. Standard Gradle (Kotlin DSL) setup.
-- **Compose inside an IME needs extra wiring.** The IME window has no `LifecycleOwner` or `SavedStateRegistryOwner`. Make the service implement both (plus `ViewModelStoreOwner`) and set them on the window's decor view with `setViewTreeLifecycleOwner` and its siblings before creating the `ComposeView`, or Compose crashes.
-- Room for the saved-sentences table.
-- Ktor or OkHttp plus kotlinx.serialization for API calls.
+The **owner declined "translate-ahead"** (sending text in the background). Translation stays tap-only.
 
-## Translation backend
-Use the Claude API (Messages endpoint) with JSON-only output. Keep the model name in settings; default to `claude-haiku-5-5` for speed.
+## Owner-approved exceptions to the base privacy rules (all in CLAUDE.md)
+- Warm-up `GET /v1/models` when the keyboard opens, at most once a minute, with no text.
+- Clipboard history of the last 15 copies, encrypted, skipping sensitive clips and password fields.
+- Opt-in screenshot suggestion: only the newest screenshot from the last couple of minutes.
+- On-device learning:
+  - word pairs, learned typo fixes, user words and word counts;
+  - per-letter touch-offset averages.
+  - The owner can view and delete all of this in "What I've learned".
+- Password and no-learning fields always get a plain keyboard that reads, sends and stores nothing.
 
-**Call 1: translate** (on demand; see "Open questions")
-Input: the English text. Output:
-```json
-{
-  "sentences": [
-    {
-      "en": "I miss you.",
-      "hanzi": "我想你了。",
-      "pinyin": "wǒ xiǎng nǐ le.",
-      "syllables": ["wo3","xiang3","ni3","le5"],
-      "chunks": [
-        {"hanzi":"我","pinyin":"wǒ","role":"Subject"},
-        {"hanzi":"想","pinyin":"xiǎng","role":"Verb"},
-        {"hanzi":"你","pinyin":"nǐ","role":"Object"},
-        {"hanzi":"了","pinyin":"le","role":"New state"}
-      ]
-    }
-  ]
-}
-```
-- `syllables` drives Practice mode: one entry per character, number-tone form. Matching ignores tones by default; make tone strictness a setting.
-- Validate the JSON. If parsing fails, show an inline "Couldn't translate. Try again." message and never crash the keyboard.
+## Build and release
+- **CI:** `.github/workflows/build.yml` on GitHub Actions. There is no Gradle wrapper; CI uses
+  Gradle 8.11.1 through `gradle/actions/setup-gradle`.
+- **Toolchain:** Kotlin 2.1.0, AGP 8.7.3, Compose BOM 2024.12.01, minSdk 26, targetSdk 35.
+- **Signing:** keystore and passwords come from Actions secrets (`SIGNING_*`). Never commit them.
+- **Publishing:** every signed build publishes a **full release** (the owner wants no
+  pre-releases) tagged `v<versionName>`, if that tag doesn't exist yet. The release body comes
+  from `RELEASE_NOTES.md`.
+- **To ship a change:**
+  1. Bump `versionName` in `app/build.gradle.kts`.
+  2. Add a "New in x.y.z" section at the top of `RELEASE_NOTES.md`.
+  3. Commit with the noreply identity and push.
+  4. Check the run with the GitHub MCP tools (`actions_list`, `get_job_logs`), not the gh CLI.
+- **No local Android SDK here:** CI is the compiler. If a build fails, read the job log for
+  `e:` lines, fix the code and push again.
+- **R8/proguard:** `proguard-rules.pro` strips `Log.d` and `Log.v`, keeps serialization, and
+  silences warnings about Tink annotations.
 
-**Call 2: why** (lazy, cached per sentence)
-Input: the sentence's hanzi, its English, and its chunks. Output: 1–2 plain-English sentences on why it's structured that way, e.g. "No 'did' and no word flip; add 吗 to a statement to make a yes/no question."
+## Known gaps / ideas not done
+- No unit tests. Good first targets: the `EnglishDictionary` correction ranking, pinyin
+  segmentation and `Practice` matching.
+- `PinyinKeysService.kt` is over 1,200 lines and should be split (Chinese composing,
+  English/autocorrect, clipboard, assist).
+- Lighter Compose redraws while typing were proposed but not done.
+- Possible later features: flashcards from saved sentences; a privacy self-review pass.
 
-**API key:** entered on a settings screen and stored with EncryptedSharedPreferences (or the Jetpack DataStore equivalent). Never hardcode it or commit it to git.
-
-**Provider choice and swappability:** The app is used mainly in the US, and the owner chose Claude Haiku 5.5 as the default provider. In translation comparisons for English to Simplified Chinese, Claude, DeepSeek and Gemini are close; DeepSeek has a slight edge, but those benchmarks use formal text, not casual texts. Haiku is the cheapest of the three and handles the structured JSON well.
-- Put all translation behind a `TranslationService` interface. `ClaudeTranslationService` is the only implementation for now.
-- Keep provider-specific details (base URL, model name, auth header, request/response mapping) inside the implementation. The rest of the app only sees the `sentences` / `why` data shapes above.
-- Keep the prompt text in one place, shared by all providers, so a second provider gets the same instructions.
-- Don't build a second provider now. The goal is that adding one later (e.g. `DeepSeekTranslationService` plus a provider picker in settings) is a small change, not a rebuild, if the user finds Claude's phrasing off.
-- A configurable base URL (entered on the phone, never committed) also allows pointing at a self-hosted relay later, for use from regions where the API is blocked.
-
-## Reading and writing WeChat's text field
-- Read: `currentInputConnection.getExtractedText(ExtractedTextRequest(), 0)`, falling back to `getTextBeforeCursor(large N, 0)`.
-- Replace (Assist): delete the English (`deleteSurroundingText` or select-all followed by `commitText`), then `commitText(hanzi, 1)`.
-- Test in WeChat early. Some apps return partial extracted text, so log the length (not the content) during development.
-
-## Privacy and safety
-See CLAUDE.md ("This repo is PUBLIC" and "Data stays on the phone"); those rules win over anything here.
-- Send text to the API only on an explicit trigger. Never send it in the background.
-- Do nothing in password or sensitive fields: check `EditorInfo.inputType` for password variations and `IME_FLAG_NO_PERSONALIZED_LEARNING`, and show a plain keyboard there.
-- Don't log message content. Saved sentences are stored only when the user taps save.
-
-## Milestones
-1. **Bare keyboard:** an IME that can be enabled in settings, QWERTY in Compose, types English in WeChat, and has a switch-back key. *Done when* the user can type and send an English message in WeChat with it.
-2. **Assist mode:** a Translate button sends the field's text, sentence cards render hanzi and pinyin, and "Insert Chinese" replaces the text. Settings screen for the API key.
-3. **Structure and Why:** tap-to-expand chips plus a lazy, cached "Why?".
-4. **Practice mode:** syllable matching, character-by-character commit, hint (reveals the next pinyin), and a progress prompt.
-5. **Saved sentences:** a bookmark button on each card, stored in Room, with a simple list screen in the app. Later this could export to another study app; keep the schema simple (en, hanzi, pinyin, chunks JSON, savedAt).
-
-Ship each milestone as a working build before starting the next.
-
-## Answered questions
-- Translation trigger: a **Translate button** only. No auto-translate after a pause.
-- Explanations: **English-only** for now.
-- Chinese→English mode for received messages: maybe later, **not in scope now**.
-
-## Out of scope
-- (Was out of scope; the owner later asked for it.) A Chinese typing mode with candidates
-  now exists, using an offline AOSP dictionary (assets/pinyin_dict.txt, Apache 2.0).
-- Voice input
-- Any accounts, sync, analytics, or Play Store release
+## Working with the owner
+- They test on their phone and send screenshots or videos. Reply in plain language and tell
+  them exactly what to try after each release.
+- Before every commit:
+  - check the diff for secrets or identifying details;
+  - make sure examples use generic made-up sentences;
+  - leave out any device model, location or personal names.
+- If the owner shares a screenshot that contains an API key, tell them to rotate the key, and
+  never copy the key anywhere.
