@@ -67,6 +67,8 @@ class PinyinKeysService : InputMethodService(),
     private val theme = mutableStateOf("System")
     private val numberRow = mutableStateOf(true)
     private val keyScale = mutableStateOf(1f)
+    private val toneColors = mutableStateOf(true)
+    private val feedback = mutableStateOf(KeyFeedback())
 
     /** What the Assist panel shows. Compose redraws whenever this changes. */
     private val assistState = mutableStateOf<AssistState>(AssistState.Idle)
@@ -235,6 +237,8 @@ class PinyinKeysService : InputMethodService(),
                     onUndoSpace = ::undoSpace,
                     showNumberRow = numberRow.value,
                     keyScale = keyScale.value,
+                    toneColors = toneColors.value,
+                    feedback = feedback.value,
                     tone = tone.value,
                     onTogglePolite = ::togglePolite,
                     onExplain = ::explainCopied,
@@ -268,6 +272,8 @@ class PinyinKeysService : InputMethodService(),
             theme.value = s.theme
             numberRow.value = s.numberRow
             keyScale.value = s.keyScale
+            toneColors.value = s.toneColors
+            feedback.value = KeyFeedback(s.vibrateKeys, s.soundKeys)
         }
         warmUpConnection()
         resetWord()
@@ -283,12 +289,7 @@ class PinyinKeysService : InputMethodService(),
 
     override fun onFinishInputView(finishingInput: Boolean) {
         super.onFinishInputView(finishingInput)
-        nextWords?.let { nw -> lifecycleScope.launch(Dispatchers.IO) { nw.save() } }
-        if (touchBiasDirty) {
-            touchBiasDirty = false
-            val lines = english?.touchBias?.map { (c, t) -> "$c\t${t.dx}\t${t.dy}" } ?: emptyList()
-            lifecycleScope.launch(Dispatchers.IO) { Settings(this@PinyinKeysService).touchBias = lines }
-        }
+        saveLearning()
         if (mediaObserverOn) {
             contentResolver.unregisterContentObserver(mediaObserver)
             mediaObserverOn = false
@@ -303,6 +304,21 @@ class PinyinKeysService : InputMethodService(),
         val s = speech ?: Speech(this).also { speech = it }
         if (!s.speak(text)) toast("No Chinese voice installed. Add one in Android's text-to-speech settings.")
     }
+
+    /** Saves learned word pairs and touch habits (on the phone, encrypted). */
+    private fun saveLearning() {
+        wordsSinceSave = 0
+        nextWords?.let { nw -> lifecycleScope.launch(Dispatchers.IO) { nw.save() } }
+        if (touchBiasDirty) {
+            touchBiasDirty = false
+            val lines = english?.touchBias?.map { (c, t) -> "$c\t${t.dx}\t${t.dy}" } ?: emptyList()
+            lifecycleScope.launch(Dispatchers.IO) { Settings(this@PinyinKeysService).touchBias = lines }
+        }
+    }
+
+    // Android can stop the keyboard's process at any time, so also save every 30 words
+    // instead of only when the keyboard is hidden.
+    private var wordsSinceSave = 0
 
     override fun onDestroy() {
         speech?.shutdown()
@@ -673,6 +689,7 @@ class PinyinKeysService : InputMethodService(),
         ) learnFix(erased.lowercase(), final.lowercase())
         if (final == word) learnTouches(word, touches)
         nextWords?.learn(sentence, final)
+        if (++wordsSinceSave >= 30) saveLearning()
         // A word you've typed a few times that isn't in the dictionary (slang, names) is
         // yours: stop "correcting" it.
         if (english?.isWord(final) == false && (nextWords?.count(final) ?: 0) >= 2) keepWord(final)
@@ -694,15 +711,7 @@ class PinyinKeysService : InputMethodService(),
     private var erasedWord: String? = null
 
     /** Number of single-letter edits between two words (small words only). */
-    private fun editDistance(a: String, b: String): Int {
-        val d = Array(a.length + 1) { IntArray(b.length + 1) }
-        for (i in 0..a.length) d[i][0] = i
-        for (j in 0..b.length) d[0][j] = j
-        for (i in 1..a.length) for (j in 1..b.length) {
-            d[i][j] = minOf(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + if (a[i - 1] == b[j - 1]) 0 else 1)
-        }
-        return d[a.length][b.length]
-    }
+    private fun editDistance(a: String, b: String) = TextUtil.editDistance(a, b)
 
     /** When this keyboard last changed the text in a way that moves the cursor a lot. */
     private var lastOwnEditAt = 0L

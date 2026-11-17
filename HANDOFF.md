@@ -9,7 +9,7 @@ pinyin, and also helps them practise typing it. The owner is new to Android, so 
 code readable and add short comments for non-obvious Android concepts.
 
 ## Status
-- **Current version:** 1.3.0. It is released as `v1.3.0` on GitHub Releases, built and
+- **Current version:** 1.4.0 (tone colours, key sound/vibration settings, tests). Releases are on GitHub Releases, built and
   signed by CI. Everything listed below is built, and the owner has tested most of it on
   their phone.
 - **Work branch:** `claude/milestone-1-translation-jeovyb`. PR #1 into `main` is open, and
@@ -77,8 +77,8 @@ The **owner declined "translate-ahead"** (sending text in the background). Trans
   silences warnings about Tink annotations.
 
 ## Known gaps / ideas not done
-- No unit tests. Good first targets: the `EnglishDictionary` correction ranking, pinyin
-  segmentation and `Practice` matching.
+- Unit tests (`app/src/test/.../KeyboardLogicTest.kt`, run in CI before every build) cover
+  autocorrect, pinyin phrases, Practice matching, tone detection. Add more as you go.
 - `PinyinKeysService.kt` is over 1,200 lines and should be split (Chinese composing,
   English/autocorrect, clipboard, assist).
 - Lighter Compose redraws while typing were proposed but not done.

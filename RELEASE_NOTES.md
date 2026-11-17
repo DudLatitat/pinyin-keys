@@ -3,6 +3,14 @@ A personal Android keyboard that shows Chinese and pinyin for the English you ty
 **Install:** download `pinyin-keys-<version>.apk` below, open it on the phone, then turn on
 Pinyin Keys in the system keyboard settings. Add your Claude API key in the Pinyin Keys app.
 
+## New in 1.4.0
+- Tone colours: pinyin on cards, word chips and saved sentences is coloured by tone
+  (1st red, 2nd orange, 3rd green, 4th blue, neutral grey). Switch off under Practice.
+- Key feedback settings: "Vibrate on key press" (on) and "Sound on key press" (off), under Typing.
+- More reliable: what the keyboard learns is saved every 30 words, not only when it closes.
+- Faster settings: the encrypted settings file is opened once instead of on every save.
+- Automatic checks: autocorrect, pinyin, Practice and tone logic are tested on every build.
+
 ## New in 1.3.0
 - Learns your touch: how far off-centre you hit each key, so corrections fit your fingers.
 - Learns from erasing: delete a misspelled word and retype it, and that typo is fixed for

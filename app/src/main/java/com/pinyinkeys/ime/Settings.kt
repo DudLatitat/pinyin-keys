@@ -16,13 +16,23 @@ import com.pinyinkeys.ime.translate.TranslationService
  * even if copied off the device. Excluded from backups by the manifest.
  */
 class Settings(context: Context) {
-    private val prefs: SharedPreferences = EncryptedSharedPreferences.create(
-        "settings_encrypted",
-        MasterKeys.getOrCreate(MasterKeys.AES256_GCM_SPEC),
-        context.applicationContext,
-        EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-        EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
-    )
+    // Opening encrypted prefs talks to the Keystore and is slow, so it's done once per
+    // process and shared by every Settings(...) object (they're cheap wrappers).
+    private val prefs: SharedPreferences = shared(context)
+
+    companion object {
+        @Volatile private var cached: SharedPreferences? = null
+        private fun shared(context: Context): SharedPreferences =
+            cached ?: synchronized(this) {
+                cached ?: EncryptedSharedPreferences.create(
+                    "settings_encrypted",
+                    MasterKeys.getOrCreate(MasterKeys.AES256_GCM_SPEC),
+                    context.applicationContext,
+                    EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+                    EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
+                ).also { cached = it }
+            }
+    }
 
     /**
      * Pasted keys sometimes carry invisible characters (line breaks, non-breaking or
@@ -80,6 +90,21 @@ class Settings(context: Context) {
     var keyScale: Float
         get() = prefs.getFloat("key_scale", 1f)
         set(v) = prefs.edit().putFloat("key_scale", v).apply()
+
+    /** Vibrate briefly on each key press. On by default. */
+    var vibrateKeys: Boolean
+        get() = prefs.getBoolean("vibrate_keys", true)
+        set(v) = prefs.edit().putBoolean("vibrate_keys", v).apply()
+
+    /** Play the phone's key click on each key press. Off by default. */
+    var soundKeys: Boolean
+        get() = prefs.getBoolean("sound_keys", false)
+        set(v) = prefs.edit().putBoolean("sound_keys", v).apply()
+
+    /** Colour pinyin by tone (1 red, 2 orange, 3 green, 4 blue). On by default. */
+    var toneColors: Boolean
+        get() = prefs.getBoolean("tone_colors", true)
+        set(v) = prefs.edit().putBoolean("tone_colors", v).apply()
 
     /** Show the 1-0 number row above the letters. */
     var numberRow: Boolean

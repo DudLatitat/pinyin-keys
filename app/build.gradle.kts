@@ -16,7 +16,7 @@ android {
         targetSdk = 35
         // versionCode must go up for every install-over-update: CI uses its run number.
         versionCode = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 2
-        versionName = "1.3.0"
+        versionName = "1.4.0"
     }
 
     // Release signing. The keystore and passwords come from GitHub Actions secrets via
@@ -47,6 +47,8 @@ android {
     }
     kotlinOptions { jvmTarget = "17" }
     buildFeatures { compose = true }
+    // Unit tests run on the computer (not a phone); Android calls like Log just do nothing.
+    testOptions { unitTests.isReturnDefaultValues = true }
 }
 
 dependencies {
@@ -72,4 +74,6 @@ dependencies {
     implementation("androidx.room:room-runtime:2.6.1")
     implementation("androidx.room:room-ktx:2.6.1")
     ksp("androidx.room:room-compiler:2.6.1")
+    // Unit tests only (not in the app): JUnit 4.
+    testImplementation("junit:junit:4.13.2")
 }

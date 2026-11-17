@@ -218,6 +218,8 @@ fun KeyboardUi(
     showNumberRow: Boolean,
     keyScale: Float,
     tone: com.pinyinkeys.ime.translate.Tone,
+    toneColors: Boolean = true,
+    feedback: KeyFeedback = KeyFeedback(),
     onTogglePolite: () -> Unit,
     onExplain: () -> Unit,
     theme: String,
@@ -234,7 +236,7 @@ fun KeyboardUi(
     val colors = if (kb.dark) darkColorScheme(primary = kb.accent) else lightColorScheme(primary = kb.accent)
 
     MaterialTheme(colorScheme = colors) {
-      CompositionLocalProvider(LocalKb provides kb, LocalSpeak provides onSpeak) {
+      CompositionLocalProvider(LocalKb provides kb, LocalSpeak provides onSpeak, LocalToneColors provides toneColors, LocalFeedback provides feedback) {
         Surface(color = kb.background) {
             // While typing pinyin, the suggestion bar takes the toolbar's place (like other keyboards).
             val toolbar: @Composable () -> Unit = {
@@ -535,12 +537,13 @@ internal val KEY_GAP_V = 7.dp
 private fun RowScope.LanguageKey(chinese: Boolean, onClick: () -> Unit) {
     val kb = LocalKb.current
     val view = LocalView.current
+    val feedback = LocalFeedback.current
     Box(
         Modifier
             .weight(1f)
             .height(LocalKeyHeights.current.key + KEY_GAP_V)
             .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {
-                view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                keyTap(view, feedback)
                 onClick()
             }
             .padding(horizontal = KEY_GAP_H / 2, vertical = KEY_GAP_V / 2)
@@ -599,6 +602,7 @@ internal fun RowScope.Key(
     var pressed by remember { mutableStateOf(false) }
     val view = LocalView.current
     val latestOnClick by rememberUpdatedState(onClick)
+    val latestFeedback by rememberUpdatedState(LocalFeedback.current)
     if (repeat) {
         // Held down: after a short pause, keep repeating until released.
         LaunchedEffect(pressed) {
@@ -639,7 +643,7 @@ internal fun RowScope.Key(
                 TouchTracker.dy = down.position.y / size.height - 0.5f
             }
             pressed = true
-            view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+            keyTap(view, latestFeedback)
             // Every key types the moment it's touched, so fast, overlapping taps always come
             // out in the right order. A long-press alternate or a space-bar slide then
             // replaces / takes back what was typed.
@@ -677,7 +681,7 @@ internal fun RowScope.Key(
                     val held = (change?.uptimeMillis ?: android.os.SystemClock.uptimeMillis()) - startTime
                     if (popupSel < 0 && held > 350) {
                         popupSel = 0
-                        view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+                        if (latestFeedback.vibrate) view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
                     }
                     if (popupSel >= 0) popupSel = (dx / optionPx).roundToInt().coerceIn(0, alternates.lastIndex)
                 }
@@ -825,7 +829,7 @@ private fun SentenceCard(
                     // ✓ once you've typed this sentence yourself in 中 mode.
                     if (done) Text("  ✓", fontSize = 20.sp, color = androidx.compose.ui.graphics.Color(0xFF34C759))
                 }
-                Text(sentence.pinyin, fontSize = 15.sp, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Medium)
+                PinyinText(sentence.pinyin, 15, FontWeight.Medium)
                 // For explained (received) messages, also show what it means.
                 if (showEnglish) Text(sentence.en, fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f))
             }
@@ -863,7 +867,7 @@ private fun SentenceCard(
                             horizontalAlignment = Alignment.CenterHorizontally,
                         ) {
                             Text(chunk.hanzi, fontSize = 18.sp, color = MaterialTheme.colorScheme.onSecondaryContainer)
-                            Text(chunk.pinyin, fontSize = 12.sp, color = MaterialTheme.colorScheme.primary)
+                            PinyinText(chunk.pinyin, 12)
                             if (chunk.meaning.isNotEmpty()) Text(
                                 chunk.meaning, fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
                                 color = MaterialTheme.colorScheme.onSecondaryContainer,
@@ -1027,6 +1031,30 @@ private fun PasteBar(preview: String, onTools: () -> Unit, onPaste: () -> Unit) 
 
 /** Lets any card read text aloud without passing the callback through every function. */
 val LocalSpeak = staticCompositionLocalOf<(String) -> Unit> { {} }
+
+/** Key-press feedback settings ("Vibrate on key press", "Sound on key press"). */
+data class KeyFeedback(val vibrate: Boolean = true, val sound: Boolean = false)
+val LocalFeedback = staticCompositionLocalOf { KeyFeedback() }
+
+/** Short vibration and/or the system's key click, as chosen in settings. */
+fun keyTap(view: android.view.View, fb: KeyFeedback) {
+    // FLAG_IGNORE_VIEW_SETTING: vibrate even if this view didn't opt in (keyboards need it).
+    if (fb.vibrate) view.performHapticFeedback(
+        HapticFeedbackConstants.KEYBOARD_TAP, HapticFeedbackConstants.FLAG_IGNORE_VIEW_SETTING,
+    )
+    if (fb.sound) (view.context.getSystemService(android.content.Context.AUDIO_SERVICE) as android.media.AudioManager)
+        .playSoundEffect(android.media.AudioManager.FX_KEYPRESS_STANDARD, -1f)
+}
+
+/** True when pinyin should be coloured by tone (setting "Tone colours"). */
+val LocalToneColors = staticCompositionLocalOf { true }
+
+/** Pinyin, coloured by tone when that setting is on, otherwise in the theme's accent. */
+@Composable
+fun PinyinText(pinyin: String, size: Int, weight: FontWeight? = null) {
+    if (LocalToneColors.current) Text(ToneColors.colorize(pinyin, LocalKb.current.dark), fontSize = size.sp, fontWeight = weight)
+    else Text(pinyin, fontSize = size.sp, color = MaterialTheme.colorScheme.primary, fontWeight = weight)
+}
 
 /** Briefly shown after an autocorrect, sliding in: "teh → the". Tap to undo. */
 @Composable

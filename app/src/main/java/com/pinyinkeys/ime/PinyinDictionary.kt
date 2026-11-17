@@ -117,19 +117,21 @@ class PinyinDictionary private constructor(
             loaded ?: load(context).also { loaded = it }
         }
 
-        private fun load(context: Context): PinyinDictionary {
+        private fun load(context: Context): PinyinDictionary =
+            context.assets.open("pinyin_dict.txt").bufferedReader(Charsets.UTF_8).useLines { fromLines(it) }
+
+        /** Builds a dictionary from "pinyin<TAB>word<TAB>frequency" lines (also used by unit tests). */
+        internal fun fromLines(lines: Sequence<String>): PinyinDictionary {
             val k = ArrayList<String>(56_000)
             val w = ArrayList<String>(56_000)
             val f = ArrayList<Int>(56_000)
-            context.assets.open("pinyin_dict.txt").bufferedReader(Charsets.UTF_8).useLines { lines ->
-                lines.forEach { line ->
-                    val a = line.indexOf('\t')
-                    val b = line.indexOf('\t', a + 1)
-                    if (a > 0 && b > a) {
-                        k += line.substring(0, a)
-                        w += line.substring(a + 1, b)
-                        f += line.substring(b + 1).toIntOrNull() ?: 1
-                    }
+            lines.forEach { line ->
+                val a = line.indexOf('\t')
+                val b = line.indexOf('\t', a + 1)
+                if (a > 0 && b > a) {
+                    k += line.substring(0, a)
+                    w += line.substring(a + 1, b)
+                    f += line.substring(b + 1).toIntOrNull() ?: 1
                 }
             }
             Log.d("PinyinDictionary", "Loaded ${k.size} entries")

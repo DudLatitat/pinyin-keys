@@ -36,6 +36,8 @@ jobs:
             echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/release.jks"
             echo "path=$RUNNER_TEMP/release.jks" >> "$GITHUB_OUTPUT"
           fi
+      - name: Unit tests
+        run: gradle :app:testDebugUnitTest --no-daemon
       - name: Build release APK (signed)
         if: steps.ks.outputs.path != ''
         env:

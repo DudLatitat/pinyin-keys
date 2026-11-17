@@ -135,6 +135,11 @@ class SetupActivity : ComponentActivity() {
                             Text("Require tone numbers (e.g. ni3)", Modifier.weight(1f))
                             Switch(checked = strict, onCheckedChange = { strict = it; settings.strictTones = it })
                         }
+                        var toneCol by remember { mutableStateOf(settings.toneColors) }
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("Colour pinyin by tone (1 red, 2 orange, 3 green, 4 blue)", Modifier.weight(1f))
+                            Switch(checked = toneCol, onCheckedChange = { toneCol = it; settings.toneColors = it })
+                        }
                         HorizontalDivider()
                         Text("Theme", style = MaterialTheme.typography.titleMedium)
                         var theme by remember { mutableStateOf(settings.theme) }
@@ -177,6 +182,16 @@ class SetupActivity : ComponentActivity() {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text("Number row above the letters", Modifier.weight(1f))
                             Switch(checked = numRow, onCheckedChange = { numRow = it; settings.numberRow = it })
+                        }
+                        var vib by remember { mutableStateOf(settings.vibrateKeys) }
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("Vibrate on key press", Modifier.weight(1f))
+                            Switch(checked = vib, onCheckedChange = { vib = it; settings.vibrateKeys = it })
+                        }
+                        var snd by remember { mutableStateOf(settings.soundKeys) }
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("Sound on key press", Modifier.weight(1f))
+                            Switch(checked = snd, onCheckedChange = { snd = it; settings.soundKeys = it })
                         }
                         Text("Key height", Modifier.padding(top = 4.dp))
                         var scale by remember { mutableStateOf(settings.keyScale) }

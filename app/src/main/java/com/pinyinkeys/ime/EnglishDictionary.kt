@@ -213,16 +213,18 @@ class EnglishDictionary private constructor(
             loaded ?: load(context).also { loaded = it }
         }
 
-        private fun load(context: Context): EnglishDictionary {
+        private fun load(context: Context): EnglishDictionary =
+            context.assets.open("en_words.txt").bufferedReader().useLines { fromLines(it) }
+
+        /** Builds a dictionary from "word<TAB>frequency" lines (also used by unit tests). */
+        internal fun fromLines(lines: Sequence<String>): EnglishDictionary {
             val map = HashMap<String, Pair<String, Int>>(100_000)
-            context.assets.open("en_words.txt").bufferedReader().useLines { lines ->
-                lines.forEach { line ->
-                    val t = line.indexOf('\t')
-                    if (t > 0) {
-                        val w = line.substring(0, t)
-                        val key = w.lowercase()
-                        if (key !in map) map[key] = w to (line.substring(t + 1).toIntOrNull() ?: 0)
-                    }
+            lines.forEach { line ->
+                val t = line.indexOf('\t')
+                if (t > 0) {
+                    val w = line.substring(0, t)
+                    val key = w.lowercase()
+                    if (key !in map) map[key] = w to (line.substring(t + 1).toIntOrNull() ?: 0)
                 }
             }
             Log.d("EnglishDictionary", "Loaded ${map.size} words")

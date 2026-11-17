@@ -37,8 +37,10 @@ class SavedActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val dao = AppDatabase.get(this).saved()
+        val toneColors = com.pinyinkeys.ime.Settings(this).toneColors
         setContent {
-            val colors = if (isSystemInDarkTheme()) darkColorScheme() else lightColorScheme()
+            val dark = isSystemInDarkTheme()
+            val colors = if (dark) darkColorScheme() else lightColorScheme()
             MaterialTheme(colorScheme = colors) {
                 Surface(Modifier.fillMaxSize()) {
                     val list by dao.all().collectAsState(initial = emptyList())
@@ -64,7 +66,9 @@ class SavedActivity : ComponentActivity() {
                                         .padding(12.dp),
                                 ) {
                                     Text(s.hanzi, fontSize = 22.sp)
-                                    Text(s.pinyin, fontSize = 15.sp, color = MaterialTheme.colorScheme.primary)
+                                    // Same tone colours as the keyboard (when that setting is on).
+                                    if (toneColors) Text(com.pinyinkeys.ime.ToneColors.colorize(s.pinyin, dark), fontSize = 15.sp)
+                                    else Text(s.pinyin, fontSize = 15.sp, color = MaterialTheme.colorScheme.primary)
                                     Text(s.en, fontSize = 14.sp)
                                     Row(verticalAlignment = Alignment.CenterVertically) {
                                         Text(
