@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- App icon: a white keyboard key with 中 on it. 108x108 canvas; the important part
+     stays inside the central 66x66 "safe zone" so any icon shape can crop the edges. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- key shadow -->
+    <path
+        android:fillColor="#1D4FD6"
+        android:pathData="M38,31 H70 A8,8 0 0 1 78,39 V75 A8,8 0 0 1 70,83 H38 A8,8 0 0 1 30,75 V39 A8,8 0 0 1 38,31 Z" />
+    <!-- key -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M38,27 H70 A8,8 0 0 1 78,35 V71 A8,8 0 0 1 70,79 H38 A8,8 0 0 1 30,71 V35 A8,8 0 0 1 38,27 Z" />
+    <!-- 中: the box... -->
+    <path
+        android:fillColor="#16244A"
+        android:fillType="evenOdd"
+        android:pathData="M41,43 H67 V61 H41 Z M44.5,46.5 V57.5 H63.5 V46.5 Z" />
+    <!-- ...and the stroke through it -->
+    <path
+        android:fillColor="#16244A"
+        android:pathData="M52.25,34 H55.75 V72 H52.25 Z" />
+</vector>
