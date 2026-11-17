@@ -215,6 +215,16 @@ class SetupActivity : ComponentActivity() {
                         var fixes by remember { mutableStateOf(settings.learnedFixes) }
                         var words by remember { mutableStateOf(settings.userWords) }
                         fun bump() { settings.learnVersion = settings.learnVersion + 1 }
+                        // A quick count, so you can see the keyboard getting to know you.
+                        val pairs = remember { settings.nextWordData.lines().count { it.isNotBlank() } }
+                        val picks = remember { settings.preferredPicks.size }
+                        val keysLearned = remember { settings.touchBias.size }
+                        Text(
+                            "Learned so far: ${words.size} words · $pairs word pairs · ${fixes.size + picks} fixes · " +
+                                "touch habits for $keysLearned keys",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
                         Text("Typos I fix for you", style = MaterialTheme.typography.bodyMedium)
                         if (fixes.isEmpty()) Text("None yet.", style = MaterialTheme.typography.bodySmall)
                         fixes.forEach { line ->

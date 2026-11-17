@@ -48,6 +48,18 @@ class EnglishDictionary private constructor(
      */
     @Volatile var touchBias: Map<Char, Touch> = emptyMap()
 
+    /**
+     * Words with digits are left alone (numbers, "2nd", "covid19"), except one digit in
+     * the middle or at the end of a word of letters: that's a slip onto the number row.
+     */
+    private fun isWordWithSlip(typed: String): Boolean {
+        val digits = typed.count { it.isDigit() }
+        return digits == 0 || (digits == 1 && !typed[0].isDigit() && typed.count { it.isLetter() } >= 2)
+    }
+
+    /** Words you picked over what you typed (typed -> picked): shown first next time. */
+    @Volatile var preferred: Map<String, String> = emptyMap()
+
     /** Typos you've fixed yourself before (typed -> what you picked), learned on the phone. */
     @Volatile var learnedFixes: Map<String, String> = emptyMap()
 
@@ -68,6 +80,8 @@ class EnglishDictionary private constructor(
         fun consider(w: String, score: Double) {
             if (score > (scores[w] ?: Double.NEGATIVE_INFINITY)) scores[w] = score
         }
+        if (!isWordWithSlip(typed)) return emptyList()
+        preferred[lower]?.let { consider(it, 600.0) }           // the word you picked last time
         learnedFixes[lower]?.let { consider(it, 500.0) }        // your own past fix wins
         byLower[lower]?.let { consider(lower, it.second + 40.0) }  // exact word: strong
         if (lower in userWords) consider(lower, 300.0)
@@ -110,13 +124,15 @@ class EnglishDictionary private constructor(
     fun autocorrect(typed: String, touches: List<Touch?> = emptyList(), boost: Map<String, Double> = emptyMap()): String? {
         val lower = typed.lowercase()
         if (lower in userWords) return null
+        // A misspelling you corrected by picking a word before: use that word.
+        if (lower !in byLower) preferred[lower]?.let { return matchCase(byLower[it]?.first ?: it, typed) }
         learnedFixes[lower]?.let { return matchCase(byLower[it]?.first ?: it, typed) }
         // Keep the dictionary's capitals: "im" -> "I'm".
         if (lower !in byLower) apostropheFix(lower)?.let { return matchCase(byLower[it]?.first ?: it, typed) }
         if (typed == "i") return "I"
         // "i'm", "i'll", "i've", "i'd" typed with the apostrophe: capital I.
         if (lower.startsWith("i'") && typed.startsWith("i") && lower in byLower) return "I" + typed.substring(1)
-        if (lower.length < 2 || typed.any { it.isDigit() }) return null
+        if (lower.length < 2 || !isWordWithSlip(typed)) return null
         val known = byLower[lower]?.second
         val candidates = corrections(lower, touches).mapNotNull { (w, cost) ->
             byLower[w]?.let { Triple(w, cost, it.second + (boost[w] ?: 0.0) / 3) }
@@ -197,6 +213,8 @@ class EnglishDictionary private constructor(
             "qwertyuiop".forEachIndexed { i, c -> put(c, i + 0.5f to 0f) }
             "asdfghjkl".forEachIndexed { i, c -> put(c, i + 1.0f to 1f) }
             "zxcvbnm".forEachIndexed { i, c -> put(c, i + 2.0f to 2f) }
+            // The number row, so a digit hit by mistake mid-word ("h5llo") can be fixed.
+            "1234567890".forEachIndexed { i, c -> put(c, i + 0.5f to -1f) }
         }
 
         /** Keys next to each other on QWERTY. */
@@ -206,6 +224,9 @@ class EnglishDictionary private constructor(
             'd' to "serfcx", 'f' to "drtgvc", 'g' to "ftyhbv", 'h' to "gyujnb", 'j' to "huikmn",
             'k' to "jiolm", 'l' to "kop", 'z' to "asx", 'x' to "zsdc", 'c' to "xdfv", 'v' to "cfgb",
             'b' to "vghn", 'n' to "bhjm", 'm' to "njk",
+            // Digits sit just above the top letter row.
+            '1' to "qw", '2' to "qwe", '3' to "wer", '4' to "ert", '5' to "rty", '6' to "tyu",
+            '7' to "yui", '8' to "uio", '9' to "iop", '0' to "op",
         )
 
         /** Keep a capital first letter (or all caps) the user typed. */

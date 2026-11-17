@@ -148,9 +148,14 @@ class Settings(context: Context) {
 
     /** Forget everything the keyboard learned about your typing. */
     fun forgetAllLearning() {
-        prefs.edit().remove("learned_fixes").remove("user_words").remove("next_words").remove("touch_bias")
+        prefs.edit().remove("learned_fixes").remove("user_words").remove("next_words").remove("touch_bias").remove("preferred_picks")
             .putInt("learn_version", learnVersion + 1).apply()
     }
+
+    /** Words you picked instead of what you typed ("typed<TAB>picked"). */
+    var preferredPicks: List<String>
+        get() = readList("preferred_picks")
+        set(v) = writeList("preferred_picks", v)
 
     /** Typos you've fixed by picking a suggestion ("typo<TAB>fix"). */
     var learnedFixes: List<String>

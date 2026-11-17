@@ -3,6 +3,15 @@ A personal Android keyboard that shows Chinese and pinyin for the English you ty
 **Install:** download `pinyin-keys-<version>.apk` below, open it on the phone, then turn on
 Pinyin Keys in the system keyboard settings. Add your Claude API key in the Pinyin Keys app.
 
+## New in 1.6.0
+- Fixed: hitting a number by mistake inside a word ("h3llo") no longer stops suggestions
+  and autocorrect; it's corrected like any other slip. Real numbers ("2nd") are left alone.
+- Firmer learning from your corrections: pick a different word than you typed and it's
+  shown first next time (and used for autocorrect if what you typed isn't a word).
+  Undoing an autocorrect also forgets any earlier pick for that word.
+- Learns from sending: new words you send without correcting become your words right away.
+- "Learned so far" counter in the app's "What I've learned" section.
+
 ## New in 1.5.0
 - Glide typing: slide across the letters of a word without lifting your finger. A trail
   shows your path; the other likely words appear above the keys (tap to swap), and

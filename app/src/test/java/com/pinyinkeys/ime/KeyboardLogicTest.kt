@@ -90,6 +90,22 @@ class KeyboardLogicTest {
         assertTrue(search.search("zzzqqq").isEmpty())
     }
 
+    @Test fun numberRowSlips() {
+        // One digit hit by mistake inside a word is fixed; real numbers are left alone.
+        assertEquals("hello", english.autocorrect("h3llo"))
+        assertNull(english.autocorrect("2nd"))
+        assertNull(english.autocorrect("covid19"))
+        assertTrue(english.suggest("h3llo").any { it == "hello" })
+    }
+
+    @Test fun preferredPickComesFirst() {
+        english.preferred = mapOf("teh" to "tea")
+        try {
+            assertEquals("tea", english.suggest("teh").first())
+            assertEquals("tea", english.autocorrect("teh"))
+        } finally { english.preferred = emptyMap() }
+    }
+
     @Test fun capitalI() {
         assertEquals("I'm", english.autocorrect("im"))
     }

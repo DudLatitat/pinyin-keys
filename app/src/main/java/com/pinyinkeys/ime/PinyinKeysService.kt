@@ -369,6 +369,7 @@ class PinyinKeysService : InputMethodService(),
         enterLabel.value = info?.let { enterLabelFor(it) }
         // New text field: forget the previous translation.
         if (!restarting) {
+            messageNewWords.clear()
             undoHistory.clear()
             glided = null
             translateJob?.cancel()
@@ -505,7 +506,11 @@ class PinyinKeysService : InputMethodService(),
             return
         }
         lastAutocorrect = null
-        if (c != null && (c.isLetter() || (c == '\'' && currentWord.isNotEmpty()))) {
+        // A digit right after letters stays part of the word, so a slip onto the number row
+        // ("h5llo") can still be corrected instead of splitting the word.
+        if (c != null && (c.isLetter() || (c == '\'' && currentWord.isNotEmpty()) ||
+                (c.isDigit() && currentWord.any { it.isLetter() } && currentWord.count { it.isDigit() } == 0))
+        ) {
             // A letter: part of the current word. Update suggestions for it.
             ic.commitText(text, 1)
             if (wordTouches.size != currentWord.length) {
@@ -634,6 +639,7 @@ class PinyinKeysService : InputMethodService(),
         ic.deleteSurroundingText(corrected.length + 1, 0)
         ic.commitText(original, 1)
         keepWord(original)  // you undid it, so don't correct this word again
+        setPreferred(original.lowercase(), null)
         english?.let { d ->
             if (original.lowercase() in d.learnedFixes) {
                 d.learnedFixes = d.learnedFixes - original.lowercase()
@@ -706,6 +712,9 @@ class PinyinKeysService : InputMethodService(),
                 dict.learnedFixes = st.learnedFixes.mapNotNull { l ->
                     l.split('\t').takeIf { p -> p.size == 2 }?.let { p -> p[0] to p[1] }
                 }.toMap()
+                dict.preferred = st.preferredPicks.mapNotNull { l ->
+                    l.split('\t').takeIf { p -> p.size == 2 }?.let { p -> p[0] to p[1] }
+                }.toMap()
                 dict.touchBias = st.touchBias.mapNotNull { l ->
                     val p = l.split('\t')
                     if (p.size == 3 && p[0].length == 1) p[0][0] to Touch(p[1].toFloat(), p[2].toFloat()) else null
@@ -738,12 +747,27 @@ class PinyinKeysService : InputMethodService(),
     }
     private var touchBiasDirty = false
 
+    /** Remember (or with null, forget) that you prefer [picked] when you type [typed]. */
+    private fun setPreferred(typed: String, picked: String?) {
+        val d = english ?: return
+        val updated = if (picked == null) d.preferred - typed
+            else (d.preferred - typed + (typed to picked)).entries.toList().takeLast(1000).associate { it.toPair() }
+        if (updated == d.preferred) return
+        d.preferred = updated
+        val lines = updated.map { "${it.key}\t${it.value}" }
+        lifecycleScope.launch(Dispatchers.IO) { Settings(this@PinyinKeysService).preferredPicks = lines }
+    }
+
+    /** Words in the current message that aren't in the dictionary and weren't corrected. */
+    private val messageNewWords = LinkedHashSet<String>()
+
     /** 9. Long-press a suggestion: forget everything learned about that word. */
     private fun forgetWord(word: String) {
         val w = word.removePrefix(LITERAL).lowercase()
         english?.let { d ->
             d.userWords = d.userWords - w
             d.learnedFixes = d.learnedFixes.filter { (k, v) -> k != w && v != w }
+            d.preferred = d.preferred.filter { (k, v) -> k != w && v != w }
         }
         nextWords?.forget(w)
         val dict = english
@@ -752,6 +776,7 @@ class PinyinKeysService : InputMethodService(),
             if (dict != null) {
                 st.userWords = dict.userWords.toList()
                 st.learnedFixes = dict.learnedFixes.map { "${it.key}\t${it.value}" }
+                st.preferredPicks = dict.preferred.map { "${it.key}\t${it.value}" }
             }
             nextWords?.save()
         }
@@ -830,6 +855,7 @@ class PinyinKeysService : InputMethodService(),
         // A word you've typed a few times that isn't in the dictionary (slang, names) is
         // yours: stop "correcting" it.
         if (english?.isWord(final) == false && (nextWords?.count(final) ?: 0) >= 2) keepWord(final)
+        if (english?.isWord(final) == false && final == word && final.all { it.isLetter() || it == '\'' }) messageNewWords += final
         addToSentence(final)
     }
 
@@ -874,6 +900,11 @@ class PinyinKeysService : InputMethodService(),
         if (!picked.startsWith(LITERAL) && currentWord.length >= 2 && !currentWord.equals(word, ignoreCase = true) &&
             english?.isWord(currentWord) == false && !word.lowercase().startsWith(currentWord.lowercase())
         ) learnFix(currentWord.lowercase(), word.lowercase())
+        // You chose a different word than you typed (not just finishing it): show that word
+        // first whenever you type this again.
+        if (!picked.startsWith(LITERAL) && currentWord.length >= 2 && !word.contains(' ') &&
+            !word.lowercase().startsWith(currentWord.lowercase())
+        ) setPreferred(currentWord.lowercase(), word.lowercase())
         if (currentWord.isNotEmpty()) ic.deleteSurroundingText(currentWord.length, 0)
         ic.commitText("$word ", 1)
         autoSpaced = true
@@ -1276,6 +1307,9 @@ class PinyinKeysService : InputMethodService(),
         clearAssist()
         practiceState.value = PracticeState.Idle
         currentInputConnection?.let { finishWord(it, autocorrectOnly = false) }
+        // You sent (or finished) the message with these new words as typed: they're yours.
+        if (suggestionsAllowed()) messageNewWords.forEach(::keepWord)
+        messageNewWords.clear()
         sentence.clear()
         suggestions.value = emptyList()
         val ic = currentInputConnection ?: return
