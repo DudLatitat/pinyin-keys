@@ -75,13 +75,14 @@ val EMOJI_TABS: List<Emoji.Category> =
  * keyboard): back to letters, the category icons, and backspace.
  */
 @Composable
-fun EmojiHeader(selected: Int, onSelect: (Int) -> Unit, onClose: () -> Unit, onBackspace: () -> Unit) {
+fun EmojiHeader(selected: Int, onSelect: (Int) -> Unit, onClose: () -> Unit, onBackspace: () -> Unit, onSearch: () -> Unit = {}) {
     val kb = LocalKb.current
     Row(
         Modifier.fillMaxWidth().height(44.dp).background(kb.toolbar).padding(horizontal = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         HeaderIcon("⌨", onClick = onClose)
+        HeaderIcon("🔍", onClick = onSearch)
         Box(Modifier.padding(horizontal = 4.dp).size(width = 1.dp, height = 22.dp).background(kb.label.copy(alpha = 0.3f)))
         LazyRow(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
             itemsIndexed(EMOJI_TABS) { i, c ->
@@ -89,6 +90,41 @@ fun EmojiHeader(selected: Int, onSelect: (Int) -> Unit, onClose: () -> Unit, onB
             }
         }
         HeaderIcon("⌫", onClick = onBackspace)
+    }
+}
+
+/**
+ * Emoji search: the query (typed with the keys below) and matching emoji in a row.
+ * Tap one to type it; ✕ goes back to the emoji grid.
+ */
+@Composable
+fun EmojiSearchBar(query: String, onEmoji: (String) -> Unit, onClose: () -> Unit) {
+    val kb = LocalKb.current
+    val context = androidx.compose.ui.platform.LocalContext.current
+    // The keyword list is loaded once, in the background, the first time you search.
+    val index by androidx.compose.runtime.produceState<EmojiSearch?>(EmojiSearch.loaded) {
+        if (value == null) value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { EmojiSearch.get(context) }
+    }
+    val results = remember(query, index) { index?.search(query) ?: emptyList() }
+    Row(
+        Modifier.fillMaxWidth().height(48.dp).background(kb.toolbar).padding(horizontal = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        HeaderIcon("✕", onClick = onClose)
+        Text(
+            if (query.isEmpty()) "Search emoji…" else query,
+            fontSize = 15.sp, maxLines = 1,
+            color = kb.label.copy(alpha = if (query.isEmpty()) 0.5f else 1f),
+            modifier = Modifier.padding(horizontal = 6.dp),
+        )
+        LazyRow(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+            items(results) { e ->
+                Box(
+                    Modifier.size(42.dp).clip(RoundedCornerShape(8.dp)).clickable { onEmoji(e) },
+                    contentAlignment = Alignment.Center,
+                ) { Text(e, fontSize = 26.sp) }
+            }
+        }
     }
 }
 
@@ -248,7 +284,14 @@ fun ClipboardGrid(
 
 /** Cursor arrows and editing actions, for precise editing without long-pressing the text. */
 @Composable
-fun EditPanel(onEdit: (EditAction) -> Unit, onBackspace: () -> Unit, onClose: () -> Unit) {
+fun EditPanel(
+    onEdit: (EditAction) -> Unit,
+    onBackspace: () -> Unit,
+    onClose: () -> Unit,
+    onUndo: () -> Unit = {},
+    onRedo: () -> Unit = {},
+    onOneHanded: () -> Unit = {},
+) {
     Column(Modifier.fillMaxWidth().height(PANEL_HEIGHT), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             PanelButton("Select all") { onEdit(EditAction.SelectAll) }
@@ -268,6 +311,9 @@ fun EditPanel(onEdit: (EditAction) -> Unit, onBackspace: () -> Unit, onClose: ()
         }
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             PanelButton("ABC", onClick = onClose)
+            PanelButton("↶ Undo", onClick = onUndo)
+            PanelButton("↷ Redo", onClick = onRedo)
+            PanelButton("One-handed", onClick = onOneHanded)
             PanelButton("⌫", onClick = onBackspace)
         }
     }

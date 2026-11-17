@@ -9,7 +9,7 @@ pinyin, and also helps them practise typing it. The owner is new to Android, so 
 code readable and add short comments for non-obvious Android concepts.
 
 ## Status
-- **Current version:** 1.4.0 (tone colours, key sound/vibration settings, tests). Releases are on GitHub Releases, built and
+- **Current version:** 1.5.0 (glide typing, undo, one-handed, emoji search). Releases are on GitHub Releases, built and
   signed by CI. Everything listed below is built, and the owner has tested most of it on
   their phone.
 - **Work branch:** `claude/milestone-1-translation-jeovyb`. PR #1 into `main` is open, and
@@ -30,6 +30,7 @@ code readable and add short comments for non-obvious Android concepts.
 | **Chinese typing (中/En key):** offline pinyin → characters. Picks whole phrases by DP segmentation. Dictionary data from AOSP PinyinIME (Apache 2.0). | `PinyinDictionary.kt` |
 | **English suggestions and autocorrect:** offline. Wordlist from AOSP LatinIME (Apache 2.0). Corrections use where the finger touched each key plus the owner's learned per-key touch bias. Also apostrophe fixes, learned fixes, user words, and a "keep as typed" option. | `EnglishDictionary.kt`, `TouchTracker.kt` |
 | **Next-word and phrase prediction:** learned word pairs plus a phrase table from Tatoeba (CC BY 2.0 FR). | `NextWords.kt`, `assets/en_phrases.txt` |
+| **Glide typing, undo/redo, one-handed mode, emoji search** | `Glide.kt`, `Undo.kt` (InputConnection wrapper), `EmojiSearch.kt` (`assets/emoji_names.tsv`, emojibase-data MIT), `KeyboardUi.kt` |
 | **Saved sentences:** stored in Room and browsed in the app | `saved/*` |
 | **Settings app:** API key, base URL and model; theme; typing options; "What I've learned"; screenshot opt-in | `SetupActivity.kt`, `Settings.kt` |
 

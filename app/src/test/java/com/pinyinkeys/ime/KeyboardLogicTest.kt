@@ -66,6 +66,34 @@ class KeyboardLogicTest {
         assertEquals("nǐ hǎo!", ToneColors.colorize("nǐ hǎo!", dark = false).text)
     }
 
+    /** A QWERTY layout with 100-pixel keys, and a finger path through the given letters. */
+    private val keys: Map<Char, androidx.compose.ui.geometry.Rect> = buildMap {
+        listOf("qwertyuiop" to 0f, "asdfghjkl" to 50f, "zxcvbnm" to 150f).forEachIndexed { row, (letters, indent) ->
+            letters.forEachIndexed { i, c ->
+                put(c, androidx.compose.ui.geometry.Rect(indent + i * 100f, row * 100f, indent + i * 100f + 100f, row * 100f + 100f))
+            }
+        }
+    }
+    private fun pathThrough(word: String) = word.map { keys.getValue(it).center }
+        .zipWithNext { a, b -> (0 until 8).map { t -> a + (b - a) * (t / 8f) } }.flatten() + keys.getValue(word.last()).center
+
+    @Test fun glideTyping() {
+        assertEquals("the", GlideDecoder.decode(pathThrough("the"), keys, english).first().lowercase())
+        assertTrue(GlideDecoder.decode(pathThrough("helo"), keys, english).any { it.lowercase() == "hello" })
+        assertTrue(GlideDecoder.decode(pathThrough("good"), keys, english).any { it.lowercase() == "good" })
+    }
+
+    @Test fun emojiSearch() {
+        val search = EmojiSearch.fromLines(File("src/main/assets/emoji_names.tsv").readLines().asSequence())
+        assertTrue("😂" in search.search("laugh"))
+        assertTrue("❤️" in search.search("red heart") || "❤" in search.search("red heart"))
+        assertTrue(search.search("zzzqqq").isEmpty())
+    }
+
+    @Test fun capitalI() {
+        assertEquals("I'm", english.autocorrect("im"))
+    }
+
     @Test fun editDistance() {
         assertEquals(2, TextUtil.editDistance("teh", "the"))
         assertEquals(1, TextUtil.editDistance("helo", "hello"))

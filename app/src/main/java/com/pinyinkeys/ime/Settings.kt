@@ -106,6 +106,16 @@ class Settings(context: Context) {
         get() = prefs.getBoolean("tone_colors", true)
         set(v) = prefs.edit().putBoolean("tone_colors", v).apply()
 
+    /** Glide typing: slide across letters to type a word. On by default. */
+    var glideTyping: Boolean
+        get() = prefs.getBoolean("glide_typing", true)
+        set(v) = prefs.edit().putBoolean("glide_typing", v).apply()
+
+    /** One-handed keyboard: -1 left, 1 right, 0 off. */
+    var oneHanded: Int
+        get() = prefs.getInt("one_handed", 0)
+        set(v) = prefs.edit().putInt("one_handed", v).apply()
+
     /** Show the 1-0 number row above the letters. */
     var numberRow: Boolean
         get() = prefs.getBoolean("number_row", true)

@@ -91,6 +91,109 @@ class PinyinKeysService : InputMethodService(),
     private val clipHistory = mutableStateOf<List<String>>(emptyList())
     private val showPasteChip = mutableStateOf(false)
 
+    // --- Undo / redo (see Undo.kt) ---
+    private val undoHistory = UndoHistory()
+    private val canUndo = mutableStateOf(false)
+    private var hasSelection = false
+    private var rawConnection: android.view.inputmethod.InputConnection? = null
+    private var recording: RecordingConnection? = null
+
+    /**
+     * Every edit goes through this connection to the app. We hand out a wrapper that
+     * notes each change, so ↶ can reverse it (memory only; nothing in password fields).
+     */
+    override fun getCurrentInputConnection(): android.view.inputmethod.InputConnection? {
+        val target = super.getCurrentInputConnection() ?: return null
+        if (target !== rawConnection) {
+            rawConnection = target
+            recording = RecordingConnection(target, undoHistory, { !sensitiveField.value }, { hasSelection })
+            undoHistory.clear()
+        }
+        return recording
+    }
+
+    private fun undoRedo(redo: Boolean) {
+        if (composing.value.isNotEmpty()) { setComposing(""); return }
+        val ic = rawConnection ?: return
+        markOwnEdit()
+        val done = if (redo) undoHistory.redo(ic) else undoHistory.undo(ic)
+        currentWord = ""; wordTouches.clear(); glided = null; lastAutocorrect = null
+        correctionNotice.value = null; autoSpaced = false
+        suggestions.value = emptyList()
+        if (!done) toast(if (redo) "Nothing to redo" else "Nothing to undo")
+    }
+
+    // --- Glide typing (see Glide.kt) ---
+    private val glide = GlideState()
+    /** The word just entered by gliding (tap a suggestion to swap it; ⌫ removes it). */
+    private var glided: String? = null
+    private var glideAlternatives: List<String> = emptyList()
+    private val glideOn = mutableStateOf(true)
+    private val oneHanded = mutableStateOf(0)
+
+    private var shiftAtLastLetter = Shift.Off
+
+    /** A glide began on a letter key, which typed its letter on touch-down: take it back. */
+    private fun glideStarted() {
+        val ic = currentInputConnection ?: return
+        markOwnEdit()
+        shift.value = shiftAtLastLetter  // typing that letter may have turned shift off
+        ic.deleteSurroundingText(1, 0)
+        if (currentWord.isNotEmpty()) currentWord = currentWord.dropLast(1)
+        if (wordTouches.isNotEmpty()) wordTouches.removeAt(wordTouches.lastIndex)
+    }
+
+    private fun glideEnded(path: List<androidx.compose.ui.geometry.Offset>, keys: Map<Char, androidx.compose.ui.geometry.Rect>) {
+        val dict = english ?: return
+        val boost = nextWords?.boosts(sentence.toList()) ?: emptyMap()
+        lifecycleScope.launch {
+            val words = withContext(Dispatchers.Default) { GlideDecoder.decode(path, keys, dict, boost) }
+            if (words.isEmpty()) { toast("No word matched that glide"); return@launch }
+            commitGlide(words)
+        }
+    }
+
+    private fun glideCase(w: String) = when (shift.value) {
+        Shift.Lock -> w.uppercase()
+        Shift.On -> w.replaceFirstChar { it.uppercase() }
+        Shift.Off -> w
+    }
+
+    private fun commitGlide(words: List<String>) {
+        val ic = currentInputConnection ?: return
+        clearAssist()
+        showPasteChip.value = false
+        // Letters tapped just before the glide finish as their own word.
+        if (currentWord.isNotEmpty()) finishWord(ic, autocorrectOnly = false)
+        val before = ic.getTextBeforeCursor(1, 0)?.toString() ?: ""
+        val space = if (before.isNotEmpty() && !before[0].isWhitespace() && before[0] !in "([{\"“") " " else ""
+        val cased = words.map(::glideCase)
+        val word = cased[0]
+        markOwnEdit()
+        ic.commitText(space + word, 1)
+        glided = word
+        glideAlternatives = cased.drop(1).take(3)
+        nextWords?.learn(sentence, word)
+        addToSentence(word)
+        if (shift.value == Shift.On) shift.value = Shift.Off
+        sentenceEnded = false
+        autoSpaced = false
+        lastAutocorrect = null
+        toolsForced.value = false
+        suggestions.value = glideAlternatives
+    }
+
+    /** Hold space: the system's keyboard picker. */
+    private fun spaceHeld() {
+        undoSpace()
+        (getSystemService(INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager).showInputMethodPicker()
+    }
+
+    private fun setOneHanded(side: Int) {
+        oneHanded.value = side
+        lifecycleScope.launch(Dispatchers.IO) { Settings(this@PinyinKeysService).oneHanded = side }
+    }
+
     // --- English suggestions / autocorrect ---
     private var english: EnglishDictionary? = null
     private var nextWords: NextWords? = null
@@ -150,6 +253,9 @@ class PinyinKeysService : InputMethodService(),
 
     override fun onCreate() {
         super.onCreate()
+        glide.onStart = ::glideStarted
+        glide.onEnd = ::glideEnded
+        undoHistory.onChange = { canUndo.value = undoHistory.canUndo }
         // Load saved emoji/clipboard lists in the background (encrypted prefs are slow to open).
         lifecycleScope.launch {
             val s = withContext(Dispatchers.IO) { Settings(this@PinyinKeysService) }
@@ -243,6 +349,13 @@ class PinyinKeysService : InputMethodService(),
                     onTogglePolite = ::togglePolite,
                     onExplain = ::explainCopied,
                     theme = theme.value,
+                    glide = if (glideOn.value) glide else null,
+                    canUndo = canUndo.value,
+                    onUndo = { undoRedo(redo = false) },
+                    onRedo = { undoRedo(redo = true) },
+                    onSpaceHold = ::spaceHeld,
+                    oneHanded = oneHanded.value,
+                    onOneHanded = ::setOneHanded,
                 )
             }
         }
@@ -256,6 +369,8 @@ class PinyinKeysService : InputMethodService(),
         enterLabel.value = info?.let { enterLabelFor(it) }
         // New text field: forget the previous translation.
         if (!restarting) {
+            undoHistory.clear()
+            glided = null
             translateJob?.cancel()
             assistState.value = AssistState.Idle
             detailsStates.clear(); whyStates.clear(); savedStates.clear()
@@ -273,6 +388,8 @@ class PinyinKeysService : InputMethodService(),
             numberRow.value = s.numberRow
             keyScale.value = s.keyScale
             toneColors.value = s.toneColors
+            glideOn.value = s.glideTyping
+            oneHanded.value = s.oneHanded
             feedback.value = KeyFeedback(s.vibrateKeys, s.soundKeys)
         }
         warmUpConnection()
@@ -369,6 +486,12 @@ class PinyinKeysService : InputMethodService(),
         }
 
         val c = text.singleOrNull()
+        // Right after a glided word: a letter starts a new word, so add the space first
+        // (punctuation and space just follow the word).
+        if (glided != null) {
+            glided = null
+            if (c != null && c.isLetterOrDigit()) ic.commitText(" ", 1)
+        }
         // After a picked suggestion (which added a space), punctuation replaces that space:
         // "word ." becomes "word. "
         val wasAutoSpaced = autoSpaced
@@ -392,6 +515,7 @@ class PinyinKeysService : InputMethodService(),
             if (erasedWord == null) eraseStart = null
             currentWord += c
             correctionNotice.value = null
+            shiftAtLastLetter = shift.value
             if (shift.value == Shift.On) shift.value = Shift.Off
             toolsForced.value = false
             updateSuggestions()
@@ -413,7 +537,10 @@ class PinyinKeysService : InputMethodService(),
                 return
             }
         }
+        // A space typed right after a word: punctuation next replaces it ("hi ," -> "hi, ").
+        val afterWord = c == ' ' && (ic.getTextBeforeCursor(1, 0)?.firstOrNull()?.isLetterOrDigit() == true)
         ic.commitText(text, 1)
+        if (afterWord) autoSpaced = true
         if (shift.value == Shift.On) shift.value = Shift.Off
         // Decide capitals here instead of asking the app after every space (each question is
         // a round trip): a space right after . ? ! starts a sentence.
@@ -444,6 +571,16 @@ class PinyinKeysService : InputMethodService(),
         markOwnEdit()  // our own deletion moves the cursor back; don't treat it as a jump
         if (guidedTarget != null) mainHandler.post { refreshGuided() }
         if (undoAutocorrect()) return
+        glided?.let { g ->
+            // Backspace right after a glide removes the whole glided word (like other keyboards).
+            glided = null
+            if (ic.getTextBeforeCursor(g.length, 0)?.toString() == g) {
+                ic.deleteSurroundingText(g.length, 0)
+                if (sentence.isNotEmpty()) sentence.removeAt(sentence.lastIndex)
+                suggestions.value = emptyList()
+                return
+            }
+        }
         if (currentWord.isNotEmpty()) {
             // Remember the word you started erasing; if you retype it differently, that's a typo fix.
             if (eraseStart == null) eraseStart = currentWord
@@ -720,6 +857,18 @@ class PinyinKeysService : InputMethodService(),
     private fun pickSuggestion(picked: String) {
         val ic = currentInputConnection ?: return
         markOwnEdit()
+        val g = glided
+        if (g != null && picked in glideAlternatives) {
+            // Swap the glided word for the one you meant.
+            ic.deleteSurroundingText(g.length, 0)
+            ic.commitText(picked, 1)
+            if (sentence.isNotEmpty()) sentence[sentence.lastIndex] = picked
+            glided = picked
+            glideAlternatives = glideAlternatives.map { if (it == picked) g else it }
+            suggestions.value = glideAlternatives
+            return
+        }
+        if (g != null) { glided = null; ic.commitText(" ", 1) }
         val word = if (picked.startsWith(LITERAL)) picked.removePrefix(LITERAL).also(::keepWord) else picked
         // You fixed a typo by picking a word: remember it, so next time it's fixed for you.
         if (!picked.startsWith(LITERAL) && currentWord.length >= 2 && !currentWord.equals(word, ignoreCase = true) &&
@@ -746,6 +895,7 @@ class PinyinKeysService : InputMethodService(),
         candidatesStart: Int, candidatesEnd: Int,
     ) {
         super.onUpdateSelection(oldSelStart, oldSelEnd, newSelStart, newSelEnd, candidatesStart, candidatesEnd)
+        hasSelection = newSelStart != newSelEnd
         // Our own edits (a picked suggestion, an autocorrect, a paste) move the cursor too;
         // the app reports that a moment later, so ignore moves right after we edited.
         if (android.os.SystemClock.uptimeMillis() - lastOwnEditAt < 400) return
@@ -753,6 +903,9 @@ class PinyinKeysService : InputMethodService(),
         // backwards, a selection, or a big jump means you moved the cursor yourself.
         val delta = newSelStart - oldSelStart
         if (newSelStart != newSelEnd || delta < 0 || delta > 40) {
+            // You moved the cursor: earlier changes can't be undone safely any more.
+            undoHistory.clear()
+            glided = null
             if (composing.value.isEmpty()) {
                 currentWord = ""
                 lastAutocorrect = null
@@ -824,6 +977,7 @@ class PinyinKeysService : InputMethodService(),
     private fun pasteText(text: String) {
         if (composing.value.isNotEmpty()) commitFirstCandidate()
         clearAssist()
+        markOwnEdit()
         currentInputConnection?.commitText(text, 1)
         showPasteChip.value = false
         currentWord = ""
@@ -1469,6 +1623,7 @@ class PinyinKeysService : InputMethodService(),
         ic.beginBatchEdit()
         val before = ic.getTextBeforeCursor(MAX_FIELD_CHARS, 0)?.length ?: 0
         val after = ic.getTextAfterCursor(MAX_FIELD_CHARS, 0)?.length ?: 0
+        markOwnEdit()
         if (!ic.getSelectedText(0).isNullOrEmpty()) ic.commitText("", 1)
         ic.deleteSurroundingText(before, after)
         if (text.isNotEmpty()) ic.commitText(text, 1)

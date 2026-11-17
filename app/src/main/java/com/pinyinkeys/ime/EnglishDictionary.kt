@@ -17,6 +17,12 @@ class EnglishDictionary private constructor(
     /** Words the user chose to keep (e.g. by undoing an autocorrect); never "corrected". */
     @Volatile var userWords: Set<String> = emptySet()
 
+    /** Every word (as written) with its frequency, plus your own words; for glide typing. */
+    fun forEachWord(action: (String, Int) -> Unit) {
+        for ((w, f) in byLower.values) action(w, f)
+        for (u in userWords) if (u !in byLower) action(u, 120)
+    }
+
     fun frequency(word: String): Int = byLower[word.lowercase()]?.second ?: -1
     fun isWord(word: String) = word.lowercase().let { it in byLower || it in userWords }
 
@@ -105,8 +111,11 @@ class EnglishDictionary private constructor(
         val lower = typed.lowercase()
         if (lower in userWords) return null
         learnedFixes[lower]?.let { return matchCase(byLower[it]?.first ?: it, typed) }
-        if (lower !in byLower) apostropheFix(lower)?.let { return matchCase(it, typed) }
+        // Keep the dictionary's capitals: "im" -> "I'm".
+        if (lower !in byLower) apostropheFix(lower)?.let { return matchCase(byLower[it]?.first ?: it, typed) }
         if (typed == "i") return "I"
+        // "i'm", "i'll", "i've", "i'd" typed with the apostrophe: capital I.
+        if (lower.startsWith("i'") && typed.startsWith("i") && lower in byLower) return "I" + typed.substring(1)
         if (lower.length < 2 || typed.any { it.isDigit() }) return null
         val known = byLower[lower]?.second
         val candidates = corrections(lower, touches).mapNotNull { (w, cost) ->

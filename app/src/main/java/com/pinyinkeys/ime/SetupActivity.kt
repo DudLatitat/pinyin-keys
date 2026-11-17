@@ -183,6 +183,11 @@ class SetupActivity : ComponentActivity() {
                             Text("Number row above the letters", Modifier.weight(1f))
                             Switch(checked = numRow, onCheckedChange = { numRow = it; settings.numberRow = it })
                         }
+                        var glideT by remember { mutableStateOf(settings.glideTyping) }
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("Glide typing (slide across the letters of a word)", Modifier.weight(1f))
+                            Switch(checked = glideT, onCheckedChange = { glideT = it; settings.glideTyping = it })
+                        }
                         var vib by remember { mutableStateOf(settings.vibrateKeys) }
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Text("Vibrate on key press", Modifier.weight(1f))

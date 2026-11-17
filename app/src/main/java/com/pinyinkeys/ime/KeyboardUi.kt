@@ -2,6 +2,11 @@ package com.pinyinkeys.ime
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.unit.toSize
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -223,9 +228,19 @@ fun KeyboardUi(
     onTogglePolite: () -> Unit,
     onExplain: () -> Unit,
     theme: String,
+    glide: GlideState? = null,
+    canUndo: Boolean = false,
+    onUndo: () -> Unit = {},
+    onRedo: () -> Unit = {},
+    onSpaceHold: (() -> Unit)? = null,
+    oneHanded: Int = 0,
+    onOneHanded: (Int) -> Unit = {},
 ) {
     // Which panel shows instead of the letter keys (emoji, clipboard, editing).
     var panelShown by remember { mutableStateOf(Panel.Keys) }
+    // Emoji search: the query typed with the keys (null = not searching).
+    var emojiQuery by remember { mutableStateOf<String?>(null) }
+    if (panelShown != Panel.Emoji && emojiQuery != null) emojiQuery = null
     val togglePanel: (Panel) -> Unit = { p -> panelShown = if (panelShown == p) Panel.Keys else p }
     var emojiTab by remember { mutableStateOf(1) }
 
@@ -242,7 +257,9 @@ fun KeyboardUi(
             val toolbar: @Composable () -> Unit = {
                 val close = { panelShown = Panel.Keys }
                 if (composing.isNotEmpty()) CandidateBar(composing, candidates, onCandidate)
-                else if (panelShown == Panel.Emoji) EmojiHeader(emojiTab, { emojiTab = it }, close, onBackspace)
+                else if (panelShown == Panel.Emoji && emojiQuery != null)
+                    EmojiSearchBar(emojiQuery ?: "", onEmoji, onClose = { emojiQuery = null })
+                else if (panelShown == Panel.Emoji) EmojiHeader(emojiTab, { emojiTab = it }, close, onBackspace, onSearch = { emojiQuery = "" })
                 else if (panelShown == Panel.Clipboard && !sensitive) ClipboardHeader(close, onClearClipHistory)
                 // Like a standard keyboard, the bar changes with what you're doing: word
                 // suggestions while typing, a Paste button after a copy, otherwise the tools.
@@ -259,7 +276,7 @@ fun KeyboardUi(
                 ) SuggestionBar(suggestions, onShowTools, onSuggestion, onForgetSuggestion)
                 else Toolbar(sensitive || numberPad != null, mode, onMode, assist, onTranslate, onInsertChinese,
                     practice, onStartPractice, onHint, panelShown, togglePanel, onOpenSettings, tone, onTogglePolite, onExplain,
-                    showPasteChip && !sensitive, onPasteChip)
+                    showPasteChip && !sensitive, onPasteChip, canUndo && !sensitive, onUndo)
             }
             val panel: @Composable () -> Unit = {
                 if (!sensitive) when (mode) {
@@ -267,15 +284,25 @@ fun KeyboardUi(
                     Mode.Practice -> PracticePanel(practice)
                 }
             }
+            val letterKeys: @Composable () -> Unit = {
+                Keys(page, { page = it }, shift, onShift, chinese, onToggleChinese, onText, onBackspace, onEnter, onSwitchKeyboard,
+                    onCursorMove, onReplaceLast, onUndoSpace, showNumberRow,
+                    glide = if (chinese || sensitive) null else glide, onSpaceHold = onSpaceHold, onCommaHold = onOpenSettings)
+            }
             val keys: @Composable () -> Unit = {
                 val close = { panelShown = Panel.Keys }
                 when (panelShown) {
                     Panel.Keys -> if (numberPad != null)
                         NumberPad(numberPad, enterLabel, onText, onBackspace, onEnter)
-                    else Keys(page, { page = it }, shift, onShift, chinese, onToggleChinese, onText, onBackspace, onEnter, onSwitchKeyboard, onCursorMove, onReplaceLast, onUndoSpace, showNumberRow)
-                    Panel.Emoji -> EmojiGrid(emojiTab, recentEmoji, onEmoji)
+                    else OneHanded(oneHanded, onOneHanded, letterKeys)
+                    // Searching emoji: the letter keys type into the search box, not the app.
+                    Panel.Emoji -> if (emojiQuery != null) Keys(
+                        0, {}, Shift.Off, {}, false, {}, { t -> emojiQuery = (emojiQuery ?: "") + t.lowercase() },
+                        { emojiQuery = (emojiQuery ?: "").dropLast(1) }, { emojiQuery = null }, onSwitchKeyboard,
+                        {}, {}, {}, showNumberRow = false,
+                    ) else EmojiGrid(emojiTab, recentEmoji, onEmoji)
                     // No clipboard or editing panel in password fields.
-                    Panel.Clipboard -> if (sensitive) Keys(page, { page = it }, shift, onShift, chinese, onToggleChinese, onText, onBackspace, onEnter, onSwitchKeyboard, onCursorMove, onReplaceLast, onUndoSpace, showNumberRow)
+                    Panel.Clipboard -> if (sensitive) letterKeys()
                         else {
                             // Newest copy first (marked "Latest"), then pinned items, then older copies.
                             val latest = clipHistory.firstOrNull()
@@ -291,7 +318,8 @@ fun KeyboardUi(
                                 onDelete = { onDeleteClip(it.text) },
                             )
                         }
-                    Panel.Edit -> EditPanel(onEdit, onBackspace, close)
+                    Panel.Edit -> EditPanel(onEdit, onBackspace, close, onUndo, onRedo,
+                        onOneHanded = { onOneHanded(if (oneHanded == 0) 1 else 0); close() })
                 }
             }
             // BoxWithConstraints tells us how wide the keyboard window is.
@@ -343,6 +371,8 @@ private fun Toolbar(
     onExplain: () -> Unit,
     showPasteChip: Boolean,
     onPasteChip: () -> Unit,
+    canUndo: Boolean = false,
+    onUndo: () -> Unit = {},
 ) {
     val kb = LocalKb.current
     val loading = assist is AssistState.Loading || practice is PracticeState.Loading ||
@@ -375,6 +405,8 @@ private fun Toolbar(
             if (mode == Mode.Assist && assist is AssistState.Result && assist.complete) Pill("Insert", accent = true, onClick = onInsertChinese)
             if (mode == Mode.Practice && practice is PracticeState.Active && !practice.done) Pill("Hint", onClick = onHint)
         }
+        // ↶ undoes the last thing typed, pasted, inserted or corrected.
+        if (canUndo) IconPill("↶", false, onClick = onUndo)
         IconPill("😊", panel == Panel.Emoji) { onPanel(Panel.Emoji) }
         if (!sensitive) IconPill("📋", panel == Panel.Clipboard) { onPanel(Panel.Clipboard) }
         IconPill("✎", panel == Panel.Edit) { onPanel(Panel.Edit) }
@@ -454,6 +486,9 @@ private fun Keys(
     onReplaceLast: (String) -> Unit,
     onUndoSpace: () -> Unit,
     showNumberRow: Boolean,
+    glide: GlideState? = null,
+    onSpaceHold: (() -> Unit)? = null,
+    onCommaHold: (() -> Unit)? = null,
 ) {
     val kb = LocalKb.current
     // Briefly show a big "中" or "EN" over the keys after switching language.
@@ -465,7 +500,11 @@ private fun Keys(
         delay(700)
         flash = null
     }
-    Box {
+    // Where the keys are in the window, to draw the glide trail in the right place.
+    val keysOrigin = remember { floatArrayOf(0f, 0f) }
+    Box(Modifier.onGloballyPositioned { c -> c.positionInWindow().let { keysOrigin[0] = it.x; keysOrigin[1] = it.y } }) {
+    // Letters glide only on the letters page.
+    CompositionLocalProvider(LocalGlide provides if (page == 0) glide else null) {
     Column {
         if (showNumberRow) KeyRow { NUMBER_ROW.forEach { c -> Key(c.toString(), preview = true, height = LocalKeyHeights.current.number, fontSize = 19) { onText(c.toString()) } } }
         if (page == 0) {
@@ -479,7 +518,7 @@ private fun Keys(
                     row.forEach { c ->
                         val label = if (shift != Shift.Off) c.uppercase() else c.toString()
                         val alts = ALTERNATES[c]?.map { if (shift != Shift.Off) it.uppercase() else it }
-                        Key(label, preview = true, alternates = alts, onAlternate = onReplaceLast) { onText(label) }
+                        Key(label, preview = true, alternates = alts, onAlternate = onReplaceLast, glideChar = c) { onText(label) }
                     }
                     if (i == 1) Spacer1(0.5f)
                     if (i == 2) Key("⌫", 1.5f, function = true, repeat = true, onClick = onBackspace)
@@ -498,14 +537,34 @@ private fun Keys(
         KeyRow {
             Key(if (page == 0) "!#1" else "ABC", 1.4f, function = true) { onPage(if (page == 0) 1 else 0) }
             LanguageKey(chinese, onToggleChinese)
-            Key(if (chinese) "，" else ",", 1f) { onText(",") }
+            // Hold comma for the Pinyin Keys settings (like other keyboards).
+            Key(if (chinese) "，" else ",", 1f, onLongPress = onCommaHold) { onText(",") }
             // Slide along the space bar to move the cursor.
             // Space on a symbols page goes back to the letters (like other keyboards).
             // The space bar names the current language, like other keyboards.
+            // Hold (without sliding) to pick another keyboard.
             Key(if (chinese) "拼音" else "English", 4.4f, onCursor = onCursorMove, onDragStart = onUndoSpace, fontSize = 14,
+                onLongPress = onSpaceHold,
                 labelColor = kb.label.copy(alpha = 0.55f)) { onText(" "); if (page != 0) onPage(0) }
             Key(if (chinese) "。" else ".", 1f, alternates = PERIOD_ALTERNATES, onAlternate = onReplaceLast) { onText(".") }
             Key("⏎", 1.4f, function = true, onClick = onEnter)
+        }
+    }
+    }
+    // The glide trail, drawn over the keys while your finger moves.
+    if (glide != null && glide.active) {
+        val trail = kb.accent.copy(alpha = 0.7f)
+        androidx.compose.foundation.Canvas(Modifier.matchParentSize()) {
+            val pts = glide.points
+            for (i in 1 until pts.size) {
+                drawLine(
+                    trail,
+                    Offset(pts[i - 1].x - keysOrigin[0], pts[i - 1].y - keysOrigin[1]),
+                    Offset(pts[i].x - keysOrigin[0], pts[i].y - keysOrigin[1]),
+                    strokeWidth = 6.dp.toPx(),
+                    cap = androidx.compose.ui.graphics.StrokeCap.Round,
+                )
+            }
         }
     }
     androidx.compose.animation.AnimatedVisibility(
@@ -594,6 +653,10 @@ internal fun RowScope.Key(
     onCursor: ((Int) -> Unit)? = null,
     /** Space bar: called when a slide starts, to take back the space typed on press. */
     onDragStart: () -> Unit = {},
+    /** Letter keys: this key's letter, for glide typing (see Glide.kt). */
+    glideChar: Char? = null,
+    /** Hold the key (without sliding) for this, e.g. space -> keyboard switcher. */
+    onLongPress: (() -> Unit)? = null,
     onClick: () -> Unit,
 ) {
     val kb = LocalKb.current
@@ -631,6 +694,11 @@ internal fun RowScope.Key(
     // Read the latest options inside the gesture instead of restarting it when they change
     // (e.g. o ↔ O as auto-capitals switch). Restarting mid-press used to leave a key stuck.
     val latestAlternates by rememberUpdatedState(alternates)
+    val latestLongPress by rememberUpdatedState(onLongPress)
+    val glide = if (glideChar != null) LocalGlide.current else null
+    val latestGlide by rememberUpdatedState(glide)
+    // Where this key is in the keyboard window (glide paths are in those coordinates).
+    val origin = remember { floatArrayOf(0f, 0f) }
     val hasSlide = onCursor != null
     val touch = Modifier.pointerInput(hasSlide) {
         awaitEachGesture {
@@ -648,7 +716,8 @@ internal fun RowScope.Key(
             // out in the right order. A long-press alternate or a space-bar slide then
             // replaces / takes back what was typed.
             latestOnClick()
-            if (alternates == null && onCursor == null) {
+            val glideNow = latestGlide
+            if (alternates == null && onCursor == null && onLongPress == null && glideNow == null) {
                 waitForUpOrCancellation()
                 pressed = false
                 return@awaitEachGesture
@@ -661,6 +730,9 @@ internal fun RowScope.Key(
             var moved = 0
             var lifted = false
             var lastX = start
+            var gliding = false
+            var longPressed = false
+            fun root(p: Offset) = Offset(p.x + origin[0], p.y + origin[1])
             while (true) {
                 // Wake up regularly even if the finger doesn't move, to notice a long press.
                 val event = withTimeoutOrNull(40) { awaitPointerEvent() }
@@ -670,7 +742,25 @@ internal fun RowScope.Key(
                 if (event != null && event.changes.none { it.pressed }) { lifted = true; break }
                 if (change != null) lastX = change.position.x
                 val dx = lastX - start
-                if (latestCursor != null) {
+                // Glide typing: the finger left this key (more than half a key away) before
+                // a long-press popup opened.
+                if (glideNow != null && change != null) {
+                    if (!gliding && popupSel < 0 &&
+                        (change.position - down.position).getDistance() > size.width * 0.6f
+                    ) {
+                        gliding = true
+                        glideNow.start(root(down.position))
+                    }
+                    if (gliding) { glideNow.add(root(change.position)); change.consume(); continue }
+                }
+                // Hold without sliding: the key's long-press action.
+                val heldFor = (change?.uptimeMillis ?: android.os.SystemClock.uptimeMillis()) - startTime
+                if (latestLongPress != null && !longPressed && !dragging && heldFor > 450) {
+                    longPressed = true
+                    if (latestFeedback.vibrate) view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+                    latestLongPress?.invoke()
+                }
+                if (latestCursor != null && !longPressed) {
                     if (!dragging && kotlin.math.abs(dx) > 16.dp.toPx()) { dragging = true; latestDragStart() }
                     if (dragging) {
                         val steps = (dx / stepPx).toInt()
@@ -687,8 +777,9 @@ internal fun RowScope.Key(
                 }
                 change?.consume()
             }
+            if (gliding) glideNow?.end()
             // The letter was already typed on touch-down; a chosen alternate replaces it.
-            if (lifted && popupSel >= 0 && alternates != null) latestAlt(alternates[popupSel])
+            else if (lifted && popupSel >= 0 && alternates != null) latestAlt(alternates[popupSel])
           } finally {
             // Whatever happened (finger lifted, gesture cancelled), never leave the key stuck.
             popupSel = -1
@@ -699,7 +790,15 @@ internal fun RowScope.Key(
     // zIndex: draw a pressed key (and its preview) on top of its neighbours.
     // The touch area is the whole cell, including the gap around the drawn key, so a tap
     // that lands slightly off still hits the nearest key (no dead space between keys).
-    Box(Modifier.weight(weight).height(height + KEY_GAP_V).zIndex(if (pressed) 1f else 0f).then(touch)) {
+    Box(
+        Modifier.weight(weight).height(height + KEY_GAP_V).zIndex(if (pressed) 1f else 0f)
+            .onGloballyPositioned { c ->
+                val pos = c.positionInWindow()
+                origin[0] = pos.x; origin[1] = pos.y
+                if (glideChar != null) glide?.keyRects?.set(glideChar, Rect(pos, c.size.toSize()))
+            }
+            .then(touch),
+    ) {
         Box(
             Modifier
                 .matchParentSize()
@@ -732,7 +831,7 @@ internal fun RowScope.Key(
                 }
             }
         }
-        if (preview && pressed && popupSel < 0) {
+        if (preview && pressed && popupSel < 0 && glide?.active != true) {
             Box(
                 Modifier
                     .align(Alignment.TopCenter)
@@ -1031,6 +1130,34 @@ private fun PasteBar(preview: String, onTools: () -> Unit, onPaste: () -> Unit) 
 
 /** Lets any card read text aloud without passing the callback through every function. */
 val LocalSpeak = staticCompositionLocalOf<(String) -> Unit> { {} }
+
+/**
+ * One-handed mode: [side] -1 = keys on the left, 1 = on the right, 0 = full width.
+ * The narrow strip on the other side moves the keys across or goes back to full width.
+ */
+@Composable
+private fun OneHanded(side: Int, onSide: (Int) -> Unit, content: @Composable () -> Unit) {
+    if (side == 0) { content(); return }
+    val kb = LocalKb.current
+    val strip: @Composable RowScope.() -> Unit = {
+        Column(
+            Modifier.weight(0.14f).padding(vertical = 8.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            IconPill(if (side > 0) "⇤" else "⇥", false) { onSide(-side) }
+            IconPill("⤢", false) { onSide(0) }
+        }
+    }
+    Row(Modifier.fillMaxWidth().background(kb.background), verticalAlignment = Alignment.CenterVertically) {
+        if (side > 0) strip()
+        Box(Modifier.weight(0.86f)) { content() }
+        if (side < 0) strip()
+    }
+}
+
+/** Glide typing for the letter keys (null = off: symbols, Chinese, password fields). */
+val LocalGlide = staticCompositionLocalOf<GlideState?> { null }
 
 /** Key-press feedback settings ("Vibrate on key press", "Sound on key press"). */
 data class KeyFeedback(val vibrate: Boolean = true, val sound: Boolean = false)

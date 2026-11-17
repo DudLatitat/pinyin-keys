@@ -71,6 +71,10 @@ Git author identity: commits use the GitHub noreply email, never a personal emai
 - Next-word suggestions learn which word follows which from what the owner types. These
   word pairs stay in the app's encrypted settings on the phone and are never learned in
   password, email or web-address fields, or in fields that ask for no learning.
+- Undo (owner's decision): to reverse its own edits, the keyboard keeps the text it typed or
+  deleted in memory only (never saved), cleared when the cursor is moved or the field
+  changes. Nothing is kept in password or no-learning fields.
+- Glide typing uses the finger's path only to pick the word; the path is never stored.
 - Typing style is learned the same way, on the phone only: typos fixed by picking a
   suggestion, words typed repeatedly that aren't in the dictionary, and word counts.
   Tap positions on keys are used for autocorrect while typing and never stored.

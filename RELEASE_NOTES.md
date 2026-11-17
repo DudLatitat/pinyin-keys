@@ -3,6 +3,17 @@ A personal Android keyboard that shows Chinese and pinyin for the English you ty
 **Install:** download `pinyin-keys-<version>.apk` below, open it on the phone, then turn on
 Pinyin Keys in the system keyboard settings. Add your Claude API key in the Pinyin Keys app.
 
+## New in 1.5.0
+- Glide typing: slide across the letters of a word without lifting your finger. A trail
+  shows your path; the other likely words appear above the keys (tap to swap), and
+  backspace right after removes the whole word. Can be turned off under Typing.
+- Undo / redo: ↶ in the top bar (and Undo / Redo in the ✎ panel) takes back the last word,
+  paste, correction or Insert.
+- Smarter punctuation: "hi ," becomes "hi, " after any word, and "im" → "I'm", "i'll" → "I'll".
+- Shortcuts: hold space to switch keyboards, hold comma for Pinyin Keys settings.
+- One-handed mode: ✎ → One-handed. Arrows move the keys to the other side, ⤢ goes back.
+- Emoji search: 🔍 in the emoji panel, type a word ("laugh", "heart", "cat").
+
 ## New in 1.4.0
 - Tone colours: pinyin on cards, word chips and saved sentences is coloured by tone
   (1st red, 2nd orange, 3rd green, 4th blue, neutral grey). Switch off under Practice.
