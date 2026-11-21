@@ -3,6 +3,11 @@ A personal Android keyboard that shows Chinese and pinyin for the English you ty
 **Install:** download `pinyin-keys-<version>.apk` below, open it on the phone, then turn on
 Pinyin Keys in the system keyboard settings. Add your Claude API key in the Pinyin Keys app.
 
+## New in 1.6.1
+- Fixed: the next word sometimes got a capital letter in the middle of a sentence. Capitals
+  after a space are now decided from the text just before it (only after . ? ! or at the
+  start), and picked suggestions and smart punctuation follow the same rule.
+
 ## New in 1.6.0
 - Fixed: hitting a number by mistake inside a word ("h3llo") no longer stops suggestions
   and autocorrect; it's corrected like any other slip. Real numbers ("2nd") are left alone.

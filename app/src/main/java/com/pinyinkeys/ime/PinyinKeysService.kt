@@ -176,7 +176,6 @@ class PinyinKeysService : InputMethodService(),
         nextWords?.learn(sentence, word)
         addToSentence(word)
         if (shift.value == Shift.On) shift.value = Shift.Off
-        sentenceEnded = false
         autoSpaced = false
         lastAutocorrect = null
         toolsForced.value = false
@@ -502,7 +501,7 @@ class PinyinKeysService : InputMethodService(),
             ic.commitText("$c ", 1)
             if (c in ".?!") sentence.clear()
             suggestions.value = if (suggestionsAllowed()) nextWords?.predict(sentence) ?: emptyList() else emptyList()
-            updateAutoCaps()
+            capsAfter("x$c ")
             return
         }
         lastAutocorrect = null
@@ -538,26 +537,33 @@ class PinyinKeysService : InputMethodService(),
             if (before != null && before.length == 2 && before[1] == ' ' && before[0].isLetterOrDigit()) {
                 ic.deleteSurroundingText(1, 0)
                 ic.commitText(". ", 1)
-                updateAutoCaps()
+                capsAfter(". ")
                 return
             }
         }
+        // The last few characters before the cursor (a tiny read) decide capitals below.
+        val prev = if (c == ' ') ic.getTextBeforeCursor(4, 0)?.toString() else null
         // A space typed right after a word: punctuation next replaces it ("hi ," -> "hi, ").
-        val afterWord = c == ' ' && (ic.getTextBeforeCursor(1, 0)?.firstOrNull()?.isLetterOrDigit() == true)
+        val afterWord = c == ' ' && (prev?.lastOrNull()?.isLetterOrDigit() == true)
         ic.commitText(text, 1)
         if (afterWord) autoSpaced = true
         if (shift.value == Shift.On) shift.value = Shift.Off
-        // Decide capitals here instead of asking the app after every space (each question is
-        // a round trip): a space right after . ? ! starts a sentence.
         when {
-            c != null && c in ".?!" -> sentenceEnded = true
-            c == ' ' -> {
-                if (shift.value != Shift.Lock && capsField) shift.value = if (sentenceEnded) Shift.On else Shift.Off
-                sentenceEnded = false
-            }
-            text.length != 1 || !text[0].isLetterOrDigit() -> { sentenceEnded = false; updateAutoCaps() }
-            else -> sentenceEnded = false
+            // Space: a capital only if it follows . ? ! (or starts the text). Decided from
+            // the text itself, so an earlier "3.5" or "lol.ok" can't cause a stray capital.
+            c == ' ' -> if (prev != null) capsAfter(prev + " ")
+            text.length != 1 || !text[0].isLetterOrDigit() -> updateAutoCaps()
         }
+    }
+
+    /**
+     * Turns on a capital for the next letter if [before] (the text just before the cursor)
+     * ends a sentence ("Hi. ") or is the start of the text; otherwise off. Caps lock stays.
+     */
+    private fun capsAfter(before: String) {
+        if (shift.value == Shift.Lock || chinese.value || !capsField) return
+        val t = before.trimEnd(' ')
+        shift.value = if (t.isEmpty() || t.last() in ".?!\n") Shift.On else Shift.Off
     }
 
     private fun backspace() {
@@ -859,9 +865,6 @@ class PinyinKeysService : InputMethodService(),
         addToSentence(final)
     }
 
-    /** A suggestion tapped: replace the word being typed (or add the next word) + space. */
-    /** Just typed . ? or ! (so the next space starts a sentence). */
-    private var sentenceEnded = false
     /** Does this text box want automatic capitals? (decided once per box) */
     private val capsField: Boolean
         get() = (currentInputEditorInfo?.inputType ?: 0) and InputType.TYPE_TEXT_FLAG_CAP_SENTENCES != 0
@@ -917,7 +920,7 @@ class PinyinKeysService : InputMethodService(),
         }
         if (shift.value == Shift.On) shift.value = Shift.Off
         suggestions.value = predictions()
-        updateAutoCaps()
+        capsAfter("x$word ")  // a picked word never starts a sentence (unless it ends with . ? !)
     }
 
     /** The cursor moved somewhere we didn't put it (tap in the text, etc.): start fresh. */
