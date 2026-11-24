@@ -1,0 +1,36 @@
+pinyin_dict.txt is derived from rawdict_utf16_65105_freq.txt in the Android Open Source
+Project's PinyinIME (platform/packages/inputmethods/PinyinIME).
+
+Copyright (c) 2009, The Android Open Source Project
+Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
+
+Changes: converted to UTF-8, rare/traditional entries removed, reformatted and re-sorted
+(see tools/build_pinyin_dict.py).
+
+en_words.txt is derived from en_US_wordlist.combined.gz in the Android Open Source
+Project's LatinIME (platform/packages/inputmethods/LatinIME).
+Copyright (c) 2008, The Android Open Source Project
+Licensed under the Apache License, Version 2.0: http://www.apache.org/licenses/LICENSE-2.0
+Changes: reformatted, offensive/not-a-word entries removed, limited to the 80,000 most
+common words (see tools/build_english_dict.py).
+
+en_phrases.txt is derived from English sentences in the Tatoeba collection
+(https://tatoeba.org), licensed under CC BY 2.0 FR
+(https://creativecommons.org/licenses/by/2.0/fr/). Changes: reduced to the three most
+common next words after common one- and two-word contexts (see tools/build_phrase_table.py).
+
+emoji_names.tsv: emoji names and keywords from emojibase-data 15.3.2
+(https://github.com/milesj/emojibase), MIT licence, derived from Unicode CLDR annotations.
+
+en_words.txt frequencies: wordfreq 3.1.1 (https://github.com/rspeer/wordfreq) by Robyn Speer,
+data licensed CC BY-SA 4.0 (https://creativecommons.org/licenses/by-sa/4.0/). The word
+list itself is from LatinIME (above); built with tools/build_english_freqs.py.
+
+en_phrases.txt: next-word counts from Tatoeba English sentences (https://tatoeba.org),
+CC BY 2.0 FR; built with tools/build_phrase_table.py.
+
+en_lm.bin: counts of 1-, 2- and 3-word sequences from Tatoeba English sentences
+(https://tatoeba.org), CC BY 2.0 FR; built with tools/build_ngram_lm.py.
+
+en_zh.tsv: English -> Chinese words from CC-CEDICT (https://www.mdbg.net/chinese/dictionary?page=cc-cedict),
+CC BY-SA 4.0, chosen using wordfreq Chinese frequencies (CC BY-SA 4.0); built with tools/build_en_zh.py.

@@ -49,12 +49,39 @@ Git author identity: commits use the GitHub noreply email, never a personal emai
   Never in the background, never automatically, never to any other host.
 - The only network permission use is that API call over HTTPS. No other outbound
   requests (no update checks, no remote config, no fonts or assets from the web).
+- Exception (owner's decision): when the keyboard opens in a non-sensitive field, it may
+  send one small request to the configured API (list models) to set up the connection
+  early, at most once a minute. It carries the API key but never any typed or message text.
+- Translations are cached on the phone (encrypted) so repeated sentences need no request.
 - Never log message content, translations, or the API key. Log lengths and error
   types only. Strip `Log.d`/`Log.v` in release builds.
 - Password and sensitive fields: if `EditorInfo.inputType` is a password variation or
   `IME_FLAG_NO_PERSONALIZED_LEARNING` is set, show a plain keyboard. Read nothing,
   send nothing, store nothing.
-- Clipboard and text field contents are read only on an explicit user action.
+- Text field contents are read only on an explicit user action.
+- Clipboard (owner's decision): the keyboard keeps a history of the last 15 copies (text
+  and images) so they can be pasted later. It's stored encrypted (images in the app's
+  private files) on the phone only and never sent anywhere. Clips Android marks as
+  sensitive (e.g. from password managers) and copies made while a password field is
+  focused are skipped.
+- Screenshots (owner's decision, opt-in): if the owner turns on "Suggest new screenshots"
+  and grants photo access, the keyboard looks only for an image in the Screenshots folder
+  taken within the last minute and offers to paste it. Nothing else in the photo library
+  is read, and the image is copied only when Paste is tapped.
+- Terminal / SSH apps (owner's decision): fields with input type "none" or from known
+  terminal apps get the plain keyboard (no suggestions, learning or reading), but the
+  clipboard button, Paste and clipboard history work there.
+- Next-word suggestions learn which word follows which from what the owner types. These
+  word pairs stay in the app's encrypted settings on the phone and are never learned in
+  password, email or web-address fields, or in fields that ask for no learning.
+- Undo (owner's decision): to reverse its own edits, the keyboard keeps the text it typed or
+  deleted in memory only (never saved), cleared when the cursor is moved or the field
+  changes. Nothing is kept in password or no-learning fields.
+- Glide typing uses the finger's path only to pick the word; the path is never stored.
+- Typing style is learned the same way, on the phone only: typos fixed by picking a
+  suggestion, words typed repeatedly that aren't in the dictionary, word counts, and words
+  written with a capital mid-sentence (names).
+  Tap positions on keys are used for autocorrect while typing and never stored.
 
 ## Dependencies
 

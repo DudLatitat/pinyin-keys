@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Copied images live in the app's private "clips" folder; FileProvider shares one with
+     the app you're typing in only when you paste it. -->
+<paths>
+    <files-path name="clips" path="clips/" />
+</paths>

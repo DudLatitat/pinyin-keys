@@ -1,0 +1,1283 @@
+package com.pinyinkeys.ime
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.Undo
+import androidx.compose.material.icons.automirrored.outlined.VolumeUp
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.outlined.ContentPaste
+import androidx.compose.material.icons.outlined.ContentPasteGo
+import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material.icons.outlined.EmojiEmotions
+import androidx.compose.material.icons.outlined.KeyboardDoubleArrowLeft
+import androidx.compose.material.icons.outlined.KeyboardDoubleArrowRight
+import androidx.compose.material.icons.outlined.OpenInFull
+import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.outlined.StarBorder
+import androidx.compose.material3.Icon
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.unit.toSize
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInWindow
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.lightColorScheme
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.ui.text.font.FontWeight
+import com.pinyinkeys.ime.translate.Sentence
+import com.pinyinkeys.ime.translate.SentenceDetails
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.FilterChip
+import android.view.HapticFeedbackConstants
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.zIndex
+import kotlinx.coroutines.delay
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.ui.graphics.Color
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.togetherWith
+import androidx.compose.animation.core.tween
+import kotlin.math.roundToInt
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+
+private val NUMBER_ROW = "1234567890"
+private val LETTER_ROWS = listOf("qwertyuiop", "asdfghjkl", "zxcvbnm")
+private val SYMBOL_PAGES = listOf(
+    listOf("+×÷=/_<>[]", "!@#\$%^&*()", "-'\":;,?"),
+    listOf("`~\\|{}€£¥•", "°©®™✓¶§·…¡", "«»¿‰¤¢♪"),
+)
+
+/**
+ * Colors modeled on a typical phone keyboard: black/light-grey background, rounded keys,
+ * and darker "function" keys (shift, backspace, ?123, enter).
+ */
+data class KbColors(
+    val background: Color,
+    val toolbar: Color,
+    val key: Color,
+    val functionKey: Color,
+    val pressed: Color,
+    val label: Color,
+    val accent: Color,
+    /** Dark theme? (decides the colors used for text on cards). */
+    val dark: Boolean = true,
+)
+
+private val DarkKb = KbColors(
+    background = Color(0xFF000000), toolbar = Color(0xFF1B1B1D), key = Color(0xFF3A3A3C),
+    functionKey = Color(0xFF1E1E20), pressed = Color(0xFF5A5A5E), label = Color(0xFFFFFFFF),
+    accent = Color(0xFF7FA6FF),
+)
+private val LightKb = KbColors(
+    background = Color(0xFFE8E9ED), toolbar = Color(0xFFF4F4F6), key = Color(0xFFFFFFFF),
+    functionKey = Color(0xFFC6CAD1), pressed = Color(0xFFB0B4BB), label = Color(0xFF111111),
+    accent = Color(0xFF2F6BFF), dark = false,
+)
+
+/** Keyboard themes, chosen in the Pinyin Keys app ("System" follows the phone's dark mode). */
+val THEMES: Map<String, KbColors> = linkedMapOf(
+    "Dark" to DarkKb,
+    "Light" to LightKb,
+    "Black" to KbColors(
+        background = Color(0xFF000000), toolbar = Color(0xFF000000), key = Color(0xFF1C1C1E),
+        functionKey = Color(0xFF0E0E10), pressed = Color(0xFF3A3A3C), label = Color(0xFFEDEDED),
+        accent = Color(0xFF8AB4FF),
+    ),
+    "Midnight" to KbColors(
+        background = Color(0xFF0B1426), toolbar = Color(0xFF111E36), key = Color(0xFF1E2D4D),
+        functionKey = Color(0xFF14213B), pressed = Color(0xFF2E4370), label = Color(0xFFE6EEFF),
+        accent = Color(0xFF6EA8FF),
+    ),
+    "Sakura" to KbColors(
+        background = Color(0xFFFBE9EF), toolbar = Color(0xFFFDF2F6), key = Color(0xFFFFFFFF),
+        functionKey = Color(0xFFF4C7D6), pressed = Color(0xFFEBAFC3), label = Color(0xFF4A2030),
+        accent = Color(0xFFD9467A), dark = false,
+    ),
+    "Jade" to KbColors(
+        background = Color(0xFF0D1F1A), toolbar = Color(0xFF12291F), key = Color(0xFF1E3B30),
+        functionKey = Color(0xFF152E25), pressed = Color(0xFF2C5546), label = Color(0xFFE5F4EE),
+        accent = Color(0xFF4FD1A1),
+    ),
+)
+
+internal val LocalKb = staticCompositionLocalOf { DarkKb }
+
+/** What holding a key offers (first = the small hint shown on the key). */
+private val ALTERNATES: Map<Char, List<String>> = mapOf(
+    'q' to listOf("1"), 'w' to listOf("2"), 'e' to listOf("3", "é", "è", "ê", "ë", "ē"),
+    'r' to listOf("4"), 't' to listOf("5"), 'y' to listOf("6", "ý", "ÿ"),
+    'u' to listOf("7", "ü", "ú", "ù", "û", "ū"), 'i' to listOf("8", "í", "ì", "î", "ï", "ī"),
+    'o' to listOf("9", "ó", "ò", "ô", "ö", "õ", "ō"), 'p' to listOf("0"),
+    'a' to listOf("á", "à", "â", "ä", "ã", "ā"), 's' to listOf("ß"), 'c' to listOf("ç"),
+    'n' to listOf("ñ"),
+)
+private val PERIOD_ALTERNATES = listOf(".", ",", "?", "!", "'", "\"", ":", ";", "-", "…")
+
+/** Shift key: off, one capital letter, or caps lock (tap cycles through them). */
+enum class Shift { Off, On, Lock }
+
+/**
+ * The QWERTY keyboard. Pure UI: every key just calls one of the callbacks,
+ * and the service turns that into edits on the text field.
+ *
+ * When `sensitive` is true (password / incognito fields) the Assist panel is hidden
+ * entirely and the keyboard is plain.
+ */
+@Composable
+fun KeyboardUi(
+    sensitive: Boolean,
+    /** Clipboard button and Paste bar (off in password fields; on in terminals). */
+    clipboardAllowed: Boolean = !sensitive,
+    mode: Mode,
+    onMode: (Mode) -> Unit,
+    practice: PracticeState,
+    onStartPractice: () -> Unit,
+    onHint: () -> Unit,
+    assist: AssistState,
+    onTranslate: () -> Unit,
+    onInsertChinese: () -> Unit,
+    detailsStates: Map<Sentence, Load<SentenceDetails>>,
+    onExpand: (Sentence) -> Unit,
+    whyStates: Map<Sentence, Load<String>>,
+    onWhy: (Sentence) -> Unit,
+    savedStates: Map<Sentence, Load<Unit>>,
+    onSave: (Sentence) -> Unit,
+    onText: (String) -> Unit,
+    onBackspace: () -> Unit,
+    onEnter: () -> Unit,
+    onSwitchKeyboard: () -> Unit,
+    shift: Shift,
+    onShift: () -> Unit,
+    chinese: Boolean,
+    onToggleChinese: () -> Unit,
+    composing: String,
+    candidates: List<Candidate>,
+    onCandidate: (Candidate) -> Unit,
+    recentEmoji: List<String>,
+    onEmoji: (String) -> Unit,
+    readClipboard: () -> String?,
+    pinnedClips: List<String>,
+    clipHistory: List<String>,
+    onPaste: (String) -> Unit,
+    onPin: (String) -> Unit,
+    onUnpin: (String) -> Unit,
+    onDeleteClip: (String) -> Unit,
+    onClearClipHistory: () -> Unit,
+    showPasteChip: Boolean,
+    onPasteChip: () -> Unit,
+    pastePreview: String?,
+    suggestions: List<String>,
+    wordHint: WordHint? = null,
+    onHintEmoji: (String) -> Unit = {},
+    onHintChinese: (String) -> Unit = {},
+    onSuggestion: (String) -> Unit,
+    onForgetSuggestion: (String) -> Unit,
+    toolsForced: Boolean,
+    onShowTools: () -> Unit,
+    correction: Pair<String, String>?,
+    onUndoCorrection: () -> Unit,
+    onSpeak: (String) -> Unit,
+    guidedDone: Int,
+    onEdit: (EditAction) -> Unit,
+    onOpenSettings: () -> Unit,
+    numberPad: NumberPadKind?,
+    enterLabel: String?,
+    onCursorMove: (Int) -> Unit,
+    onReplaceLast: (String) -> Unit,
+    onUndoSpace: () -> Unit,
+    showNumberRow: Boolean,
+    keyScale: Float,
+    tone: com.pinyinkeys.ime.translate.Tone,
+    toneColors: Boolean = true,
+    feedback: KeyFeedback = KeyFeedback(),
+    onTogglePolite: () -> Unit,
+    onExplain: () -> Unit,
+    theme: String,
+    glide: GlideState? = null,
+    canUndo: Boolean = false,
+    onUndo: () -> Unit = {},
+    onRedo: () -> Unit = {},
+    onSpaceHold: (() -> Unit)? = null,
+    oneHanded: Int = 0,
+    onOneHanded: (Int) -> Unit = {},
+) {
+    // Which panel shows instead of the letter keys (emoji, clipboard, editing).
+    var panelShown by remember { mutableStateOf(Panel.Keys) }
+    // Emoji search: the query typed with the keys (null = not searching).
+    var emojiQuery by remember { mutableStateOf<String?>(null) }
+    if (panelShown != Panel.Emoji && emojiQuery != null) emojiQuery = null
+    val togglePanel: (Panel) -> Unit = { p -> panelShown = if (panelShown == p) Panel.Keys else p }
+    var emojiTab by remember { mutableStateOf(1) }
+
+    // 0 = letters, 1 and 2 = symbol pages.
+    var page by remember { mutableStateOf(0) }
+    val kb = THEMES[theme] ?: if (isSystemInDarkTheme()) DarkKb else LightKb
+    // Card text colors follow the theme; pinyin uses the theme's accent color.
+    val colors = if (kb.dark) darkColorScheme(primary = kb.accent) else lightColorScheme(primary = kb.accent)
+
+    MaterialTheme(colorScheme = colors) {
+      CompositionLocalProvider(LocalKb provides kb, LocalSpeak provides onSpeak, LocalToneColors provides toneColors, LocalFeedback provides feedback) {
+        Surface(color = kb.background) {
+            // While typing pinyin, the suggestion bar takes the toolbar's place (like other keyboards).
+            val toolbar: @Composable () -> Unit = {
+                val close = { panelShown = Panel.Keys }
+                if (composing.isNotEmpty()) CandidateBar(composing, candidates, onCandidate)
+                else if (panelShown == Panel.Emoji && emojiQuery != null)
+                    EmojiSearchBar(emojiQuery ?: "", onEmoji, onClose = { emojiQuery = null })
+                else if (panelShown == Panel.Emoji) EmojiHeader(emojiTab, { emojiTab = it }, close, onBackspace, onSearch = { emojiQuery = "" })
+                else if (panelShown == Panel.Clipboard && clipboardAllowed) ClipboardHeader(close, onClearClipHistory)
+                // Like a standard keyboard, the bar changes with what you're doing: word
+                // suggestions while typing, a Paste button after a copy, otherwise the tools.
+                // (Translate results and Practice keep the tools so their buttons stay visible.)
+                // Right after an autocorrect: "teh → the", tap to undo.
+                else if (!toolsForced && !sensitive && correction != null)
+                    CorrectionBar(correction, onUndoCorrection)
+                // A fresh copy or screenshot comes first (it disappears once you type).
+                else if (!toolsForced && clipboardAllowed && showPasteChip && pastePreview != null &&
+                    assist is AssistState.Idle
+                ) PasteBar(pastePreview, onShowTools, onPasteChip)
+                else if (!toolsForced && !sensitive && assist is AssistState.Idle &&
+                    (mode == Mode.Assist || practice is PracticeState.Idle) && suggestions.isNotEmpty()
+                ) SuggestionBar(suggestions, onShowTools, onSuggestion, onForgetSuggestion, wordHint, onHintEmoji, onHintChinese)
+                else Toolbar(sensitive || numberPad != null, mode, onMode, assist, onTranslate, onInsertChinese,
+                    practice, onStartPractice, onHint, panelShown, togglePanel, onOpenSettings, tone, onTogglePolite, onExplain,
+                    showPasteChip && clipboardAllowed, onPasteChip, canUndo && !sensitive, onUndo, clipboardAllowed)
+            }
+            val panel: @Composable () -> Unit = {
+                if (!sensitive) when (mode) {
+                    Mode.Assist -> AssistPanel(assist, detailsStates, onExpand, whyStates, onWhy, savedStates, onSave, guidedDone)
+                    Mode.Practice -> PracticePanel(practice)
+                }
+            }
+            val letterKeys: @Composable () -> Unit = {
+                Keys(page, { page = it }, shift, onShift, chinese, onToggleChinese, onText, onBackspace, onEnter, onSwitchKeyboard,
+                    onCursorMove, onReplaceLast, onUndoSpace, showNumberRow,
+                    glide = if (chinese || sensitive) null else glide, onSpaceHold = onSpaceHold, onCommaHold = onOpenSettings)
+            }
+            val keys: @Composable () -> Unit = {
+                val close = { panelShown = Panel.Keys }
+                when (panelShown) {
+                    Panel.Keys -> if (numberPad != null)
+                        NumberPad(numberPad, enterLabel, onText, onBackspace, onEnter)
+                    else OneHanded(oneHanded, onOneHanded, letterKeys)
+                    // Searching emoji: the letter keys type into the search box, not the app.
+                    Panel.Emoji -> if (emojiQuery != null) Keys(
+                        0, {}, Shift.Off, {}, false, {}, { t -> emojiQuery = (emojiQuery ?: "") + t.lowercase() },
+                        { emojiQuery = (emojiQuery ?: "").dropLast(1) }, { emojiQuery = null }, onSwitchKeyboard,
+                        {}, {}, {}, showNumberRow = false,
+                    ) else EmojiGrid(emojiTab, recentEmoji, onEmoji)
+                    // No clipboard or editing panel in password fields.
+                    Panel.Clipboard -> if (!clipboardAllowed) letterKeys()
+                        else {
+                            // Newest copy first (marked "Latest"), then pinned items, then older copies.
+                            val latest = clipHistory.firstOrNull()
+                            val items = buildList {
+                                if (latest != null) add(ClipItem(latest, latest in pinnedClips, current = true))
+                                pinnedClips.filter { it != latest }.forEach { add(ClipItem(it, pinned = true, current = false)) }
+                                clipHistory.drop(1).filter { it !in pinnedClips }.forEach { add(ClipItem(it, pinned = false, current = false)) }
+                            }
+                            ClipboardGrid(
+                                items,
+                                onPaste = { onPaste(it); close() },
+                                onTogglePin = { if (it.pinned) onUnpin(it.text) else onPin(it.text) },
+                                onDelete = { onDeleteClip(it.text) },
+                            )
+                        }
+                    Panel.Edit -> EditPanel(onEdit, onBackspace, close, onUndo, onRedo,
+                        onOneHanded = { onOneHanded(if (oneHanded == 0) 1 else 0); close() })
+                }
+            }
+            // BoxWithConstraints tells us how wide the keyboard window is.
+            BoxWithConstraints(Modifier.fillMaxWidth()) {
+                // Wide screen (foldable's inner screen): like a standard keyboard, keep the
+                // keys centred at about 88% of the width and make them a little taller.
+                val wide = maxWidth >= 600.dp
+                val contentWidth = if (wide) maxWidth * 0.88f else minOf(maxWidth, 720.dp)
+                val base = if (wide) WideKeys else NormalKeys
+                val heights = KeyHeights(base.key * keyScale, base.number * keyScale)
+                CompositionLocalProvider(LocalKeyHeights provides heights) {
+                    Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+                        toolbar()
+                        Column(
+                            Modifier.width(contentWidth).padding(horizontal = 6.dp, vertical = 6.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp),
+                        ) {
+                            panel()
+                            keys()
+                        }
+                    }
+                }
+            }
+        }
+      }
+    }
+}
+
+/**
+ * The slim bar above the keys: mode switch, Translate (or Restart), the next action
+ * (Insert Chinese / Hint).
+ */
+@Composable
+private fun Toolbar(
+    sensitive: Boolean,
+    mode: Mode,
+    onMode: (Mode) -> Unit,
+    assist: AssistState,
+    onTranslate: () -> Unit,
+    onInsertChinese: () -> Unit,
+    practice: PracticeState,
+    onStartPractice: () -> Unit,
+    onHint: () -> Unit,
+    panel: Panel,
+    onPanel: (Panel) -> Unit,
+    onOpenSettings: () -> Unit,
+    tone: com.pinyinkeys.ime.translate.Tone,
+    onTogglePolite: () -> Unit,
+    onExplain: () -> Unit,
+    showPasteChip: Boolean,
+    onPasteChip: () -> Unit,
+    canUndo: Boolean = false,
+    onUndo: () -> Unit = {},
+    clipboardAllowed: Boolean = !sensitive,
+) {
+    val kb = LocalKb.current
+    val loading = assist is AssistState.Loading || practice is PracticeState.Loading ||
+        (assist is AssistState.Result && !assist.complete)
+    // All buttons evenly spaced across the bar, like a standard keyboard's tool row.
+    Row(
+        Modifier.fillMaxWidth().height(44.dp).background(kb.toolbar).padding(horizontal = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceEvenly,
+    ) {
+        // Something was just copied: offer it.
+        if (showPasteChip) IconPill(Icons.Outlined.ContentPasteGo, "Paste", true, onClick = onPasteChip)
+        if (!sensitive) {
+            // 助 = Assist (help), 练 = Practice. Tap to switch.
+            IconPill(if (mode == Mode.Assist) "助" else "练", true) {
+                onMode(if (mode == Mode.Assist) Mode.Practice else Mode.Assist)
+            }
+            // 译 = translate (a spinner replaces it while working).
+            if (loading) Box(Modifier.size(34.dp), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp, color = kb.accent)
+            } else when (mode) {
+                Mode.Assist -> IconPill("译", false, onClick = onTranslate)
+                Mode.Practice -> IconPill(if (practice is PracticeState.Active) "↻" else "译", false, onClick = onStartPractice)
+            }
+            if (mode == Mode.Assist && !loading) {
+                // 解 = explain a copied Chinese message; 随/俏/敬 = casual, slang or polite.
+                IconPill("解", false, onClick = onExplain)
+                IconPill(tone.icon, tone != com.pinyinkeys.ime.translate.Tone.Casual, onClick = onTogglePolite)
+            }
+            if (mode == Mode.Assist && assist is AssistState.Result && assist.complete) Pill("Insert", accent = true, onClick = onInsertChinese)
+            if (mode == Mode.Practice && practice is PracticeState.Active && !practice.done) Pill("Hint", onClick = onHint)
+        }
+        // ↶ undoes the last thing typed, pasted, inserted or corrected.
+        if (canUndo) IconPill(Icons.AutoMirrored.Outlined.Undo, "Undo", false, onClick = onUndo)
+        // No emoji in password fields (terminals, which allow the clipboard, keep it).
+        if (!sensitive || clipboardAllowed) IconPill(Icons.Outlined.EmojiEmotions, "Emoji", panel == Panel.Emoji) { onPanel(Panel.Emoji) }
+        if (clipboardAllowed) IconPill(Icons.Outlined.ContentPaste, "Clipboard", panel == Panel.Clipboard) { onPanel(Panel.Clipboard) }
+        IconPill(Icons.Outlined.Edit, "Edit", panel == Panel.Edit) { onPanel(Panel.Edit) }
+        IconPill(Icons.Outlined.Settings, "Settings", false, onClick = onOpenSettings)
+    }
+}
+
+/** A round toolbar button with a line icon (themed, like a standard keyboard). */
+@Composable
+private fun IconPill(icon: ImageVector, description: String, active: Boolean, enabled: Boolean = true, onClick: () -> Unit) {
+    val kb = LocalKb.current
+    Box(
+        Modifier
+            .size(34.dp)
+            .clip(RoundedCornerShape(17.dp))
+            .background(if (active) kb.key else kb.functionKey)
+            .clickable(enabled = enabled, onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) { Icon(icon, description, Modifier.size(20.dp), tint = kb.label.copy(alpha = if (enabled) 1f else 0.4f)) }
+}
+
+/** A round icon button in the toolbar with a text label (译, 解...); [active] when its panel is open. */
+@Composable
+private fun IconPill(icon: String, active: Boolean, enabled: Boolean = true, onClick: () -> Unit) {
+    val kb = LocalKb.current
+    Box(
+        Modifier
+            .size(34.dp)
+            .clip(RoundedCornerShape(17.dp))
+            .background(if (active) kb.key else kb.functionKey)
+            .clickable(enabled = enabled, onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) { Text(icon, fontSize = 16.sp, color = kb.label.copy(alpha = if (enabled) 1f else 0.4f)) }
+}
+
+/** A small rounded toolbar button. */
+@Composable
+private fun Pill(text: String, selected: Boolean = false, accent: Boolean = false, enabled: Boolean = true, onClick: () -> Unit) {
+    val kb = LocalKb.current
+    Box(
+        Modifier
+            .height(32.dp)
+            .clip(RoundedCornerShape(16.dp))
+            .background(if (accent) kb.accent else if (selected) kb.key else kb.functionKey)
+            .clickable(enabled = enabled, onClick = onClick)
+            .padding(horizontal = 12.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(text, fontSize = 14.sp, fontWeight = FontWeight.Medium,
+            color = if (accent) Color.White else kb.label.copy(alpha = if (enabled) 1f else 0.4f))
+    }
+}
+
+/** Suggestions for the pinyin being typed. Tap one to put it in the message. */
+@Composable
+private fun CandidateBar(composing: String, candidates: List<Candidate>, onPick: (Candidate) -> Unit) {
+    val kb = LocalKb.current
+    Row(Modifier.fillMaxWidth().height(48.dp).background(kb.toolbar), verticalAlignment = Alignment.CenterVertically) {
+        Text(composing, fontSize = 13.sp, color = kb.label.copy(alpha = 0.6f),
+            modifier = Modifier.padding(horizontal = 6.dp))
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+            itemsIndexed(candidates) { i, c ->
+                Box(
+                    Modifier
+                        .height(40.dp)
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(if (i == 0) kb.key else kb.toolbar)
+                        .clickable { onPick(c) }
+                        .padding(horizontal = 10.dp),
+                    contentAlignment = Alignment.Center,
+                ) { Text(c.word, fontSize = 20.sp, color = kb.label) }
+            }
+        }
+    }
+}
+
+/** Number row, letter (or symbol) rows and the bottom row. */
+@Composable
+private fun Keys(
+    page: Int,
+    onPage: (Int) -> Unit,
+    shift: Shift,
+    onShift: () -> Unit,
+    chinese: Boolean,
+    onToggleChinese: () -> Unit,
+    onText: (String) -> Unit,
+    onBackspace: () -> Unit,
+    onEnter: () -> Unit,
+    onSwitchKeyboard: () -> Unit,
+    onCursorMove: (Int) -> Unit,
+    onReplaceLast: (String) -> Unit,
+    onUndoSpace: () -> Unit,
+    showNumberRow: Boolean,
+    glide: GlideState? = null,
+    onSpaceHold: (() -> Unit)? = null,
+    onCommaHold: (() -> Unit)? = null,
+) {
+    val kb = LocalKb.current
+    // Briefly show a big "中" or "EN" over the keys after switching language.
+    var flash by remember { mutableStateOf<String?>(null) }
+    var firstRun by remember { mutableStateOf(true) }
+    LaunchedEffect(chinese) {
+        if (firstRun) { firstRun = false; return@LaunchedEffect }
+        flash = if (chinese) "中" else "EN"
+        delay(700)
+        flash = null
+    }
+    // Where the keys are in the window, to draw the glide trail in the right place.
+    val keysOrigin = remember { floatArrayOf(0f, 0f) }
+    Box(Modifier.onGloballyPositioned { c -> c.positionInWindow().let { keysOrigin[0] = it.x; keysOrigin[1] = it.y } }) {
+    // Letters glide only on the letters page.
+    CompositionLocalProvider(LocalGlide provides if (page == 0) glide else null) {
+    Column {
+        if (showNumberRow) KeyRow { NUMBER_ROW.forEach { c -> Key(c.toString(), preview = true, height = LocalKeyHeights.current.number, fontSize = 19) { onText(c.toString()) } } }
+        if (page == 0) {
+            LETTER_ROWS.forEachIndexed { i, row ->
+                KeyRow {
+                    if (i == 1) Spacer1(0.5f)
+                    if (i == 2) Key(
+                        if (shift == Shift.Lock) "⇪" else "⇧", 1.5f, function = true,
+                        labelColor = if (shift != Shift.Off) kb.accent else null, onClick = onShift,
+                    )
+                    row.forEach { c ->
+                        val label = if (shift != Shift.Off) c.uppercase() else c.toString()
+                        val alts = ALTERNATES[c]?.map { if (shift != Shift.Off) it.uppercase() else it }
+                        Key(label, preview = true, alternates = alts, onAlternate = onReplaceLast, glideChar = c) { onText(label) }
+                    }
+                    if (i == 1) Spacer1(0.5f)
+                    if (i == 2) Key("⌫", 1.5f, function = true, repeat = true, onClick = onBackspace)
+                }
+            }
+        } else {
+            val rows = SYMBOL_PAGES[page - 1]
+            rows.forEachIndexed { i, row ->
+                KeyRow {
+                    if (i == 2) Key(if (page == 1) "1/2" else "2/2", 1.5f, function = true) { onPage(if (page == 1) 2 else 1) }
+                    row.forEach { c -> Key(c.toString(), preview = true) { onText(c.toString()) } }
+                    if (i == 2) Key("⌫", 1.5f, function = true, repeat = true, onClick = onBackspace)
+                }
+            }
+        }
+        KeyRow {
+            Key(if (page == 0) "!#1" else "ABC", 1.4f, function = true) { onPage(if (page == 0) 1 else 0) }
+            LanguageKey(chinese, onToggleChinese)
+            // Hold comma for the Pinyin Keys settings (like other keyboards).
+            Key(if (chinese) "，" else ",", 1f, onLongPress = onCommaHold) { onText(",") }
+            // Slide along the space bar to move the cursor.
+            // Space on a symbols page goes back to the letters (like other keyboards).
+            // The space bar names the current language, like other keyboards.
+            // Hold (without sliding) to pick another keyboard.
+            Key(if (chinese) "拼音" else "English", 4.4f, onCursor = onCursorMove, onDragStart = onUndoSpace, fontSize = 14,
+                onLongPress = onSpaceHold,
+                labelColor = kb.label.copy(alpha = 0.55f)) { onText(" "); if (page != 0) onPage(0) }
+            Key(if (chinese) "。" else ".", 1f, alternates = PERIOD_ALTERNATES, onAlternate = onReplaceLast) { onText(".") }
+            Key("⏎", 1.4f, function = true, onClick = onEnter)
+        }
+    }
+    }
+    // The glide trail, drawn over the keys while your finger moves.
+    if (glide != null && glide.active) {
+        val trail = kb.accent.copy(alpha = 0.7f)
+        androidx.compose.foundation.Canvas(Modifier.matchParentSize()) {
+            val pts = glide.points
+            for (i in 1 until pts.size) {
+                drawLine(
+                    trail,
+                    Offset(pts[i - 1].x - keysOrigin[0], pts[i - 1].y - keysOrigin[1]),
+                    Offset(pts[i].x - keysOrigin[0], pts[i].y - keysOrigin[1]),
+                    strokeWidth = 6.dp.toPx(),
+                    cap = androidx.compose.ui.graphics.StrokeCap.Round,
+                )
+            }
+        }
+    }
+    androidx.compose.animation.AnimatedVisibility(
+        visible = flash != null,
+        modifier = Modifier.align(Alignment.Center),
+        enter = fadeIn(tween(120)) + androidx.compose.animation.scaleIn(tween(160), initialScale = 0.7f),
+        exit = fadeOut(tween(250)),
+    ) {
+        Box(
+            Modifier.size(96.dp).clip(RoundedCornerShape(20.dp)).background(kb.accent.copy(alpha = 0.92f)),
+            contentAlignment = Alignment.Center,
+        ) { Text(flash ?: "", fontSize = 40.sp, color = Color.White, fontWeight = FontWeight.Bold) }
+    }
+    }
+}
+
+@Composable
+private fun KeyRow(content: @Composable RowScope.() -> Unit) {
+    // No spacing here: each key's cell already includes its share of the gap.
+    Row(Modifier.fillMaxWidth(), content = content)
+}
+
+/** Visual gaps between keys (part of each key's touch area). */
+internal val KEY_GAP_H = 6.dp
+internal val KEY_GAP_V = 7.dp
+
+/** "中/En" key: the active language is drawn brighter. */
+@Composable
+private fun RowScope.LanguageKey(chinese: Boolean, onClick: () -> Unit) {
+    val kb = LocalKb.current
+    val view = LocalView.current
+    val feedback = LocalFeedback.current
+    Box(
+        Modifier
+            .weight(1f)
+            .height(LocalKeyHeights.current.key + KEY_GAP_V)
+            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) {
+                keyTap(view, feedback)
+                onClick()
+            }
+            .padding(horizontal = KEY_GAP_H / 2, vertical = KEY_GAP_V / 2)
+            .clip(KEY_SHAPE)
+            // Lit up in the accent color while typing Chinese, so the mode is obvious.
+            .background(if (chinese) kb.accent else kb.functionKey),
+    ) {
+        val on = if (chinese) Color.White else kb.label
+        val off = (if (chinese) Color.White else kb.label).copy(alpha = 0.45f)
+        // "中" top-left, "/" in the middle, "En" bottom-right, each small enough not to overlap.
+        Row(Modifier.align(Alignment.Center), verticalAlignment = Alignment.CenterVertically) {
+            Text("中", fontSize = 11.sp, color = if (chinese) on else off,
+                modifier = Modifier.offset(y = (-5).dp))
+            Text("/", fontSize = 14.sp, color = off)
+            Text("En", fontSize = 12.sp, color = if (chinese) off else on,
+                modifier = Modifier.offset(y = 5.dp))
+        }
+    }
+}
+
+/** Key heights; a bit taller on the wide inner screen of a foldable. */
+data class KeyHeights(val key: Dp, val number: Dp)
+internal val NormalKeys = KeyHeights(key = 42.dp, number = 36.dp)
+private val WideKeys = KeyHeights(key = 48.dp, number = 40.dp)
+internal val LocalKeyHeights = staticCompositionLocalOf { NormalKeys }
+/** Slightly rounded, mostly square corners, like a standard keyboard. */
+private val KEY_SHAPE = RoundedCornerShape(6.dp)
+
+/**
+ * One key. [preview] shows a bigger copy of the letter above your finger while pressed;
+ * [repeat] keeps firing while held (used for backspace); [function] keys (shift, enter...)
+ * are drawn darker. Every press gives a light tap vibration, like other keyboards.
+ */
+@Composable
+internal fun RowScope.Key(
+    label: String,
+    weight: Float = 1f,
+    preview: Boolean = false,
+    repeat: Boolean = false,
+    function: Boolean = false,
+    labelColor: Color? = null,
+    height: Dp = LocalKeyHeights.current.key,
+    fontSize: Int? = null,
+    /** Hold the key to choose one of these (e.g. 3, é, è), sliding sideways to pick. */
+    alternates: List<String>? = null,
+    onAlternate: (String) -> Unit = {},
+    /** Space bar: slide sideways to move the cursor by this many characters. */
+    onCursor: ((Int) -> Unit)? = null,
+    /** Space bar: called when a slide starts, to take back the space typed on press. */
+    onDragStart: () -> Unit = {},
+    /** Letter keys: this key's letter, for glide typing (see Glide.kt). */
+    glideChar: Char? = null,
+    /** Hold the key (without sliding) for this, e.g. space -> keyboard switcher. */
+    onLongPress: (() -> Unit)? = null,
+    onClick: () -> Unit,
+) {
+    val kb = LocalKb.current
+    // Our own pressed state: the key types on touch-DOWN (like other keyboards), not on
+    // release, which is what makes typing feel immediate.
+    var pressed by remember { mutableStateOf(false) }
+    val view = LocalView.current
+    val latestOnClick by rememberUpdatedState(onClick)
+    val latestFeedback by rememberUpdatedState(LocalFeedback.current)
+    if (repeat) {
+        // Held down: after a short pause, keep repeating until released.
+        LaunchedEffect(pressed) {
+            if (!pressed) return@LaunchedEffect
+            // Start repeating sooner and speed up the longer it's held (like other keyboards):
+            // 50 ms per step at first, down to 20 ms.
+            delay(300)
+            var interval = 50L
+            while (true) {
+                latestOnClick()
+                delay(interval)
+                if (interval > 20) interval -= 3
+            }
+        }
+    }
+    val pressScale by androidx.compose.animation.core.animateFloatAsState(
+        if (pressed) 0.9f else 1f,
+        androidx.compose.animation.core.spring(dampingRatio = 0.55f, stiffness = 900f),
+        label = "keyPress",
+    )
+    // Index of the highlighted alternate while the long-press popup is open (-1 = closed).
+    var popupSel by remember { mutableStateOf(-1) }
+    val latestAlt by rememberUpdatedState(onAlternate)
+    val latestCursor by rememberUpdatedState(onCursor)
+    val latestDragStart by rememberUpdatedState(onDragStart)
+    // Read the latest options inside the gesture instead of restarting it when they change
+    // (e.g. o ↔ O as auto-capitals switch). Restarting mid-press used to leave a key stuck.
+    val latestAlternates by rememberUpdatedState(alternates)
+    val latestLongPress by rememberUpdatedState(onLongPress)
+    val glide = if (glideChar != null) LocalGlide.current else null
+    val latestGlide by rememberUpdatedState(glide)
+    // Where this key is in the keyboard window (glide paths are in those coordinates).
+    val origin = remember { floatArrayOf(0f, 0f) }
+    val hasSlide = onCursor != null
+    val touch = Modifier.pointerInput(hasSlide) {
+        awaitEachGesture {
+          try {
+            val down = awaitFirstDown(requireUnconsumed = false)
+            val alternates = latestAlternates
+            // Remember where on the key this tap landed (for touch-aware autocorrect).
+            if (size.width > 0 && size.height > 0) {
+                TouchTracker.dx = down.position.x / size.width - 0.5f
+                TouchTracker.dy = down.position.y / size.height - 0.5f
+            }
+            pressed = true
+            keyTap(view, latestFeedback)
+            // Every key types the moment it's touched, so fast, overlapping taps always come
+            // out in the right order. A long-press alternate or a space-bar slide then
+            // replaces / takes back what was typed.
+            latestOnClick()
+            val glideNow = latestGlide
+            if (alternates == null && onCursor == null && onLongPress == null && glideNow == null) {
+                waitForUpOrCancellation()
+                pressed = false
+                return@awaitEachGesture
+            }
+            val start = down.position.x
+            val startTime = down.uptimeMillis
+            val stepPx = 12.dp.toPx()      // space bar: one character per 12dp of sliding
+            val optionPx = 36.dp.toPx()    // width of one alternate in the popup
+            var dragging = false
+            var moved = 0
+            var lifted = false
+            var lastX = start
+            var gliding = false
+            var longPressed = false
+            fun root(p: Offset) = Offset(p.x + origin[0], p.y + origin[1])
+            while (true) {
+                // Wake up regularly even if the finger doesn't move, to notice a long press.
+                val event = withTimeoutOrNull(40) { awaitPointerEvent() }
+                val change = event?.changes?.firstOrNull { it.id == down.id }
+                if (change != null && !change.pressed) { lifted = true; break }
+                // Safety: if no finger is down any more, end the press.
+                if (event != null && event.changes.none { it.pressed }) { lifted = true; break }
+                if (change != null) lastX = change.position.x
+                val dx = lastX - start
+                // Glide typing: the finger left this key (more than half a key away) before
+                // a long-press popup opened.
+                if (glideNow != null && change != null) {
+                    if (!gliding && popupSel < 0 &&
+                        (change.position - down.position).getDistance() > size.width * 0.6f
+                    ) {
+                        gliding = true
+                        glideNow.start(root(down.position))
+                    }
+                    if (gliding) { glideNow.add(root(change.position)); change.consume(); continue }
+                }
+                // Hold without sliding: the key's long-press action.
+                val heldFor = (change?.uptimeMillis ?: android.os.SystemClock.uptimeMillis()) - startTime
+                if (latestLongPress != null && !longPressed && !dragging && heldFor > 450) {
+                    longPressed = true
+                    if (latestFeedback.vibrate) view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+                    latestLongPress?.invoke()
+                }
+                if (latestCursor != null && !longPressed) {
+                    if (!dragging && kotlin.math.abs(dx) > 16.dp.toPx()) { dragging = true; latestDragStart() }
+                    if (dragging) {
+                        val steps = (dx / stepPx).toInt()
+                        if (steps != moved) { latestCursor?.invoke(steps - moved); moved = steps }
+                    }
+                }
+                if (alternates != null) {
+                    val held = (change?.uptimeMillis ?: android.os.SystemClock.uptimeMillis()) - startTime
+                    if (popupSel < 0 && held > 350) {
+                        popupSel = 0
+                        if (latestFeedback.vibrate) view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+                    }
+                    if (popupSel >= 0) popupSel = (dx / optionPx).roundToInt().coerceIn(0, alternates.lastIndex)
+                }
+                change?.consume()
+            }
+            if (gliding) glideNow?.end()
+            // The letter was already typed on touch-down; a chosen alternate replaces it.
+            else if (lifted && popupSel >= 0 && alternates != null) latestAlt(alternates[popupSel])
+          } finally {
+            // Whatever happened (finger lifted, gesture cancelled), never leave the key stuck.
+            popupSel = -1
+            pressed = false
+          }
+        }
+    }
+    // zIndex: draw a pressed key (and its preview) on top of its neighbours.
+    // The touch area is the whole cell, including the gap around the drawn key, so a tap
+    // that lands slightly off still hits the nearest key (no dead space between keys).
+    Box(
+        Modifier.weight(weight).height(height + KEY_GAP_V).zIndex(if (pressed) 1f else 0f)
+            .onGloballyPositioned { c ->
+                val pos = c.positionInWindow()
+                origin[0] = pos.x; origin[1] = pos.y
+                if (glideChar != null) glide?.keyRects?.set(glideChar, Rect(pos, c.size.toSize()))
+            }
+            .then(touch),
+    ) {
+        Box(
+            Modifier
+                .matchParentSize()
+                .padding(horizontal = KEY_GAP_H / 2, vertical = KEY_GAP_V / 2)
+                // Pressed keys shrink a little and spring back.
+                .graphicsLayer { scaleX = pressScale; scaleY = pressScale }
+                .clip(KEY_SHAPE)
+                .background(if (pressed) kb.pressed else if (function) kb.functionKey else kb.key),
+            contentAlignment = Alignment.Center,
+        ) {
+            // Short labels (letters, symbols) big; words like "ABC" or "1/2" a bit smaller.
+            val size = fontSize ?: if (label.length > 1) 17 else 22
+            Text(label, fontSize = size.sp, color = labelColor ?: kb.label)
+        }
+        if (popupSel >= 0 && alternates != null) {
+            // Long-press popup: slide left/right to choose, lift to type it.
+            Row(
+                Modifier
+                    .align(Alignment.TopStart)
+                    .offset(y = (-52).dp)
+                    .clip(KEY_SHAPE)
+                    .background(kb.pressed),
+            ) {
+                alternates.forEachIndexed { i, a ->
+                    Box(
+                        Modifier.size(width = 36.dp, height = 46.dp)
+                            .background(if (i == popupSel) kb.accent else kb.pressed),
+                        contentAlignment = Alignment.Center,
+                    ) { Text(a, fontSize = 20.sp, color = if (i == popupSel) Color.White else kb.label) }
+                }
+            }
+        }
+        if (preview && pressed && popupSel < 0 && glide?.active != true) {
+            Box(
+                Modifier
+                    .align(Alignment.TopCenter)
+                    .offset(y = (-50).dp)
+                    .size(width = 46.dp, height = 48.dp)
+                    .clip(KEY_SHAPE)
+                    .background(kb.pressed),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(label, fontSize = 26.sp, color = kb.label)
+            }
+        }
+    }
+}
+
+@Composable
+private fun RowScope.Spacer1(weight: Float) {
+    Box(Modifier.weight(weight))
+}
+
+/** Translate button, sentence cards and "Insert Chinese", above the keys. */
+@Composable
+private fun AssistPanel(
+    state: AssistState,
+    detailsStates: Map<Sentence, Load<SentenceDetails>>,
+    onExpand: (Sentence) -> Unit,
+    whyStates: Map<Sentence, Load<String>>,
+    onWhy: (Sentence) -> Unit,
+    savedStates: Map<Sentence, Load<Unit>>,
+    onSave: (Sentence) -> Unit,
+    guidedDone: Int,
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        if (state is AssistState.Error) Text(state.message, color = MaterialTheme.colorScheme.error, fontSize = 14.sp)
+        if (state is AssistState.Result) {
+            // Cap the height so the keys stay on screen; scroll if there are many sentences.
+            Column(
+                Modifier.heightIn(max = 220.dp).verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                val explained = state.reply != null
+                state.result.sentences.forEachIndexed { i, sentence ->
+                    // key(): remember each card's expanded state separately, reset on a new translation.
+                    androidx.compose.runtime.key(state.result, i) {
+                        SentenceCard(sentence, detailsStates[sentence], whyStates[sentence], savedStates[sentence], { onExpand(sentence) }, { onWhy(sentence) }, { onSave(sentence) }, done = i < guidedDone, showEnglish = explained)
+                    }
+                }
+                // After explaining a received message: a suggested reply (Insert types it).
+                state.reply?.let { reply ->
+                    Text("Suggested reply", fontSize = 12.sp, color = LocalKb.current.label.copy(alpha = 0.6f))
+                    androidx.compose.runtime.key(reply) {
+                        SentenceCard(reply, detailsStates[reply], whyStates[reply], savedStates[reply], { onExpand(reply) }, { onWhy(reply) }, { onSave(reply) }, showEnglish = true)
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * One sentence: hanzi and pinyin. Tap to expand into structure chips and a "Why?" button;
+ * tap again to collapse.
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun SentenceCard(
+    sentence: Sentence,
+    details: Load<SentenceDetails>?,
+    why: Load<String>?,
+    saved: Load<Unit>?,
+    onExpand: () -> Unit,
+    onWhy: () -> Unit,
+    onSave: () -> Unit,
+    done: Boolean = false,
+    showEnglish: Boolean = false,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(8.dp))
+            .background(LocalKb.current.key)
+            .clickable {
+                expanded = !expanded
+                if (expanded) onExpand()
+            }
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(sentence.hanzi, fontSize = 24.sp, color = MaterialTheme.colorScheme.onSurface)
+                    // ✓ once you've typed this sentence yourself in 中 mode.
+                    if (done) Text("  ✓", fontSize = 20.sp, color = androidx.compose.ui.graphics.Color(0xFF34C759))
+                }
+                PinyinText(sentence.pinyin, 15, FontWeight.Medium)
+                // For explained (received) messages, also show what it means.
+                if (showEnglish) Text(sentence.en, fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f))
+            }
+            // Small icon buttons so the sentence gets most of the width.
+            // 🔊 reads the Chinese aloud; ☆/★ saves the sentence.
+            val speak = LocalSpeak.current
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                SmallIcon(Icons.AutoMirrored.Outlined.VolumeUp, "Read aloud") { speak(sentence.hanzi) }
+                when (saved) {
+                    Load.Loading -> CircularProgressIndicator(Modifier.padding(6.dp).size(16.dp), strokeWidth = 2.dp)
+                    else -> SmallIcon(if (saved is Load.Loaded) Icons.Filled.Star else Icons.Outlined.StarBorder, "Save",
+                        enabled = saved !is Load.Loaded, onClick = onSave)
+                }
+            }
+        }
+        if (saved is Load.Error) Text(saved.message, fontSize = 13.sp, color = MaterialTheme.colorScheme.error)
+        if (!expanded) return@Column
+        when (details) {
+            null, Load.Loading -> CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+            is Load.Error -> ErrorRow(details.message, onExpand)
+            is Load.Loaded -> {
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    val speakWord = LocalSpeak.current
+                    details.value.chunks.forEach { chunk ->
+                        // Each word: characters, pinyin, English meaning, grammar role.
+                        // Tap it to hear just that word.
+                        Column(
+                            Modifier
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(MaterialTheme.colorScheme.secondaryContainer)
+                                .clickable { speakWord(chunk.hanzi) }
+                                .padding(horizontal = 8.dp, vertical = 4.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                        ) {
+                            Text(chunk.hanzi, fontSize = 18.sp, color = MaterialTheme.colorScheme.onSecondaryContainer)
+                            PinyinText(chunk.pinyin, 12)
+                            if (chunk.meaning.isNotEmpty()) Text(
+                                chunk.meaning, fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSecondaryContainer,
+                            )
+                            Text(chunk.role, fontSize = 10.sp,
+                                color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.7f))
+                        }
+                    }
+                }
+                when (why) {
+                    null -> TextButton(onClick = onWhy) { Text("Why?") }
+                    Load.Loading -> CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                    is Load.Loaded -> Text(why.value, fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurface)
+                    is Load.Error -> ErrorRow(why.message, onWhy)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ErrorRow(message: String, onRetry: () -> Unit) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(message, fontSize = 13.sp, color = MaterialTheme.colorScheme.error, modifier = Modifier.weight(1f))
+        TextButton(onClick = onRetry) { Text("Retry") }
+    }
+}
+
+/** Assist / Practice switch at the top of the panel. */
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@Composable
+private fun ModeToggle(mode: Mode, onMode: (Mode) -> Unit) {
+    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        Mode.entries.forEach { m ->
+            FilterChip(selected = mode == m, onClick = { onMode(m) }, label = { Text(m.name) })
+        }
+    }
+}
+
+/** Practice: the Chinese stays hidden; type each syllable in pinyin to earn the character. */
+@Composable
+private fun PracticePanel(state: PracticeState) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        if (state is PracticeState.Error) Text(state.message, color = MaterialTheme.colorScheme.error, fontSize = 14.sp)
+        if (state is PracticeState.Active) {
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(LocalKb.current.key)
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                if (state.done) {
+                    Text("Done! Check it, then send. 🎉", fontSize = 18.sp, color = MaterialTheme.colorScheme.onSurface)
+                } else {
+                    val n = state.units.size
+                    Text(
+                        "Sentence ${state.sentenceIndex + 1}/$n · ${state.doneInSentence}/${state.totalInSentence}",
+                        fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Text(state.sentences[state.sentenceIndex].en, fontSize = 16.sp, color = MaterialTheme.colorScheme.onSurface)
+                    val target = state.current?.syllable.orEmpty()
+                    val next = if (state.hintShown) Practice.toToneMarks(target) else "?"
+                    Text("Next: $next", fontSize = 15.sp, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Medium)
+                    if (state.buffer.isNotEmpty()) {
+                        // Red once what's typed can't become the right syllable.
+                        val ok = Practice.isPrefix(state.buffer, target, strictTones = true) ||
+                            Practice.isPrefix(state.buffer, target, strictTones = false)
+                        Text(
+                            state.buffer, fontSize = 20.sp,
+                            color = if (ok) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.error,
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** "‹" button at the left of the ribbon: shows the tools instead. */
+@Composable
+private fun ToolsButton(onClick: () -> Unit) {
+    val kb = LocalKb.current
+    Box(
+        Modifier.size(width = 40.dp, height = 44.dp).clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) { Text("‹", fontSize = 26.sp, color = kb.label.copy(alpha = 0.8f)) }
+}
+
+/** Three word suggestions, best in the middle (like other keyboards). Tap to use one. */
+@Composable
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+private fun SuggestionBar(
+    words: List<String>,
+    onTools: () -> Unit,
+    onPick: (String) -> Unit,
+    onForget: (String) -> Unit,
+    hint: WordHint? = null,
+    onHintEmoji: (String) -> Unit = {},
+    onHintChinese: (String) -> Unit = {},
+) {
+    val kb = LocalKb.current
+    // Order on screen: 2nd, 1st (middle, bold), 3rd.
+    val shown = when (words.size) {
+        1 -> listOf(null, words[0], null)
+        2 -> listOf(words[1], words[0], null)
+        else -> listOf(words[1], words[0], words[2])
+    }
+    Row(Modifier.fillMaxWidth().height(44.dp).background(kb.toolbar), verticalAlignment = Alignment.CenterVertically) {
+        ToolsButton(onTools)
+        shown.forEachIndexed { i, w ->
+            if (i > 0) Box(Modifier.size(width = 1.dp, height = 20.dp).background(kb.label.copy(alpha = 0.2f)))
+            Box(
+                // Tap to use; long-press to make the keyboard forget a word it learned.
+                Modifier.weight(1f).height(44.dp).combinedClickable(
+                    enabled = w != null,
+                    onClick = { w?.let(onPick) },
+                    onLongClick = { w?.let(onForget) },
+                ),
+                contentAlignment = Alignment.Center,
+            ) {
+                // Each word slides/fades in when it changes, like other keyboards.
+                AnimatedContent(
+                    targetState = w,
+                    transitionSpec = {
+                        (fadeIn(tween(140)) + slideInVertically(tween(140)) { it / 3 }) togetherWith
+                            fadeOut(tween(90))
+                    },
+                    label = "suggestion",
+                ) { word ->
+                    // The "keep what I typed" option is shown in quotes.
+                    // The word space will put in (an autocorrect) is bold in the accent colour.
+                    val auto = word?.startsWith(PinyinKeysService.AUTO) == true
+                    if (word != null) Text(
+                        if (word.startsWith(PinyinKeysService.LITERAL)) "\"${word.removePrefix(PinyinKeysService.LITERAL)}\""
+                        else word.removePrefix(PinyinKeysService.AUTO),
+                        fontSize = 17.sp, color = if (auto) kb.accent else kb.label, maxLines = 1,
+                        fontWeight = if (auto) FontWeight.Bold else if (i == 1) FontWeight.SemiBold else FontWeight.Normal,
+                    )
+                }
+            }
+        }
+        // The Chinese for the word (tap: hear it; hold: type it instead) and an emoji.
+        val speak = LocalSpeak.current
+        if (hint?.hanzi != null) Column(
+            Modifier.padding(horizontal = 2.dp).clip(RoundedCornerShape(8.dp)).background(kb.key)
+                .combinedClickable(onClick = { speak(hint.hanzi) }, onLongClick = { onHintChinese(hint.hanzi) })
+                .padding(horizontal = 8.dp, vertical = 2.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Text(hint.hanzi, fontSize = 15.sp, color = kb.label, maxLines = 1)
+            hint.pinyin?.let { Text(it, fontSize = 10.sp, color = kb.accent, maxLines = 1) }
+        }
+        if (hint?.emoji != null) Box(
+            Modifier.size(38.dp).clip(RoundedCornerShape(8.dp)).clickable { onHintEmoji(hint.emoji) },
+            contentAlignment = Alignment.Center,
+        ) { Text(hint.emoji, fontSize = 22.sp) }
+        if (hint == null) Box(Modifier.width(40.dp)) else Spacer(Modifier.width(4.dp))
+    }
+}
+
+/** After a copy: a Paste button with a preview of what was copied. */
+@Composable
+private fun PasteBar(preview: String, onTools: () -> Unit, onPaste: () -> Unit) {
+    val kb = LocalKb.current
+    Row(Modifier.fillMaxWidth().height(44.dp).background(kb.toolbar), verticalAlignment = Alignment.CenterVertically) {
+        ToolsButton(onTools)
+        Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
+            Row(
+                Modifier
+                    .height(34.dp)
+                    .clip(RoundedCornerShape(17.dp))
+                    .background(kb.key)
+                    .clickable(onClick = onPaste)
+                    .padding(horizontal = 14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(Icons.Outlined.ContentPaste, null, Modifier.size(16.dp), tint = kb.label)
+                Spacer(Modifier.width(6.dp))
+                Text(preview, fontSize = 14.sp, color = kb.label, maxLines = 1,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+            }
+        }
+        Box(Modifier.width(40.dp))
+    }
+}
+
+/** Lets any card read text aloud without passing the callback through every function. */
+val LocalSpeak = staticCompositionLocalOf<(String) -> Unit> { {} }
+
+/**
+ * One-handed mode: [side] -1 = keys on the left, 1 = on the right, 0 = full width.
+ * The narrow strip on the other side moves the keys across or goes back to full width.
+ */
+@Composable
+private fun OneHanded(side: Int, onSide: (Int) -> Unit, content: @Composable () -> Unit) {
+    if (side == 0) { content(); return }
+    val kb = LocalKb.current
+    val strip: @Composable RowScope.() -> Unit = {
+        Column(
+            Modifier.weight(0.14f).padding(vertical = 8.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            IconPill(if (side > 0) Icons.Outlined.KeyboardDoubleArrowLeft else Icons.Outlined.KeyboardDoubleArrowRight,
+                "Move keys", false) { onSide(-side) }
+            IconPill(Icons.Outlined.OpenInFull, "Full width", false) { onSide(0) }
+        }
+    }
+    Row(Modifier.fillMaxWidth().background(kb.background), verticalAlignment = Alignment.CenterVertically) {
+        if (side > 0) strip()
+        Box(Modifier.weight(0.86f)) { content() }
+        if (side < 0) strip()
+    }
+}
+
+/** Glide typing for the letter keys (null = off: symbols, Chinese, password fields). */
+val LocalGlide = staticCompositionLocalOf<GlideState?> { null }
+
+/** Key-press feedback settings ("Vibrate on key press", "Sound on key press"). */
+data class KeyFeedback(val vibrate: Boolean = true, val sound: Boolean = false)
+val LocalFeedback = staticCompositionLocalOf { KeyFeedback() }
+
+/** Short vibration and/or the system's key click, as chosen in settings. */
+fun keyTap(view: android.view.View, fb: KeyFeedback) {
+    // FLAG_IGNORE_VIEW_SETTING: vibrate even if this view didn't opt in (keyboards need it).
+    if (fb.vibrate) view.performHapticFeedback(
+        HapticFeedbackConstants.KEYBOARD_TAP, HapticFeedbackConstants.FLAG_IGNORE_VIEW_SETTING,
+    )
+    if (fb.sound) (view.context.getSystemService(android.content.Context.AUDIO_SERVICE) as android.media.AudioManager)
+        .playSoundEffect(android.media.AudioManager.FX_KEYPRESS_STANDARD, -1f)
+}
+
+/** True when pinyin should be coloured by tone (setting "Tone colours"). */
+val LocalToneColors = staticCompositionLocalOf { true }
+
+/** Pinyin, coloured by tone when that setting is on, otherwise in the theme's accent. */
+@Composable
+fun PinyinText(pinyin: String, size: Int, weight: FontWeight? = null) {
+    if (LocalToneColors.current) Text(ToneColors.colorize(pinyin, LocalKb.current.dark), fontSize = size.sp, fontWeight = weight)
+    else Text(pinyin, fontSize = size.sp, color = MaterialTheme.colorScheme.primary, fontWeight = weight)
+}
+
+/** Briefly shown after an autocorrect, sliding in: "teh → the". Tap to undo. */
+@Composable
+private fun CorrectionBar(correction: Pair<String, String>, onUndo: () -> Unit) {
+    val kb = LocalKb.current
+    var shown by remember(correction) { mutableStateOf(false) }
+    LaunchedEffect(correction) { shown = true }
+    Box(Modifier.fillMaxWidth().height(44.dp).background(kb.toolbar), contentAlignment = Alignment.Center) {
+        androidx.compose.animation.AnimatedVisibility(
+            visible = shown,
+            enter = fadeIn(tween(160)) + slideInVertically(tween(160)) { it / 2 },
+        ) {
+            Row(
+                Modifier.clip(RoundedCornerShape(17.dp)).background(kb.key).clickable(onClick = onUndo)
+                    .padding(horizontal = 14.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(correction.first, fontSize = 16.sp, color = kb.label.copy(alpha = 0.6f))
+                Text("  →  ", fontSize = 16.sp, color = kb.accent)
+                Text(correction.second, fontSize = 16.sp, color = kb.label, fontWeight = FontWeight.SemiBold)
+                Text("   tap to undo", fontSize = 12.sp, color = kb.label.copy(alpha = 0.5f))
+            }
+        }
+    }
+}
+
+/** A compact tappable icon (smaller than a standard button). */
+@Composable
+private fun SmallIcon(icon: ImageVector, description: String, enabled: Boolean = true, onClick: () -> Unit) {
+    Box(
+        Modifier.size(30.dp).clip(RoundedCornerShape(15.dp)).clickable(enabled = enabled, onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) { Icon(icon, description, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary) }
+}
