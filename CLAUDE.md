@@ -68,6 +68,9 @@ Git author identity: commits use the GitHub noreply email, never a personal emai
   and grants photo access, the keyboard looks only for an image in the Screenshots folder
   taken within the last minute and offers to paste it. Nothing else in the photo library
   is read, and the image is copied only when Paste is tapped.
+- Terminal / SSH apps (owner's decision): fields with input type "none" or from known
+  terminal apps get the plain keyboard (no suggestions, learning or reading), but the
+  clipboard button, Paste and clipboard history work there.
 - Next-word suggestions learn which word follows which from what the owner types. These
   word pairs stay in the app's encrypted settings on the phone and are never learned in
   password, email or web-address fields, or in fields that ask for no learning.

@@ -3,6 +3,22 @@ A personal Android keyboard that shows Chinese and pinyin for the English you ty
 **Install:** download `pinyin-keys-<version>.apk` below, open it on the phone, then turn on
 Pinyin Keys in the system keyboard settings. Add your Claude API key in the Pinyin Keys app.
 
+## New in 1.7.0
+- Much better autocorrect (measured with a built-in typing test: fast, sloppy typing went
+  from about 55% of typos fixed to 84%, with no correct words changed):
+  - Real word frequencies from everyday writing and chat (so "lol", "gonna" are words and
+    common words beat rare look-alikes).
+  - Missed, doubled and swapped letters are fixed more readily ("helo", "tommorow", "becuase").
+  - Several slips onto neighbouring keys in a long word ("domerhinf" → something).
+  - Run-together words: "ofthe" → "of the", "thebcat" → "the cat"; a stray space inside a
+    word is removed ("th e" → "the").
+  - Half-typed words finish on space ("someth" → something), and a lone "u"/"o" tapped
+    next to I becomes "I".
+- Better next-word prediction from a phrase table about twice as big, with counts, so
+  common phrases rank properly and a pair you typed once doesn't push them out.
+- Stricter learning: a word counts as yours after 3 uses (was 2); your picks still come first.
+- Terminal apps: the clipboard button, Paste and clipboard history now work there.
+
 ## New in 1.6.2
 - Terminal and SSH apps: typing now works. In fields that want raw key presses, each key
   is sent as a real key press, and backspace sends a Delete key when the app doesn't share

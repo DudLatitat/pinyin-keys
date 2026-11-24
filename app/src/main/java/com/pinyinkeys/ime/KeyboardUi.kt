@@ -166,6 +166,8 @@ enum class Shift { Off, On, Lock }
 @Composable
 fun KeyboardUi(
     sensitive: Boolean,
+    /** Clipboard button and Paste bar (off in password fields; on in terminals). */
+    clipboardAllowed: Boolean = !sensitive,
     mode: Mode,
     onMode: (Mode) -> Unit,
     practice: PracticeState,
@@ -260,7 +262,7 @@ fun KeyboardUi(
                 else if (panelShown == Panel.Emoji && emojiQuery != null)
                     EmojiSearchBar(emojiQuery ?: "", onEmoji, onClose = { emojiQuery = null })
                 else if (panelShown == Panel.Emoji) EmojiHeader(emojiTab, { emojiTab = it }, close, onBackspace, onSearch = { emojiQuery = "" })
-                else if (panelShown == Panel.Clipboard && !sensitive) ClipboardHeader(close, onClearClipHistory)
+                else if (panelShown == Panel.Clipboard && clipboardAllowed) ClipboardHeader(close, onClearClipHistory)
                 // Like a standard keyboard, the bar changes with what you're doing: word
                 // suggestions while typing, a Paste button after a copy, otherwise the tools.
                 // (Translate results and Practice keep the tools so their buttons stay visible.)
@@ -268,7 +270,7 @@ fun KeyboardUi(
                 else if (!toolsForced && !sensitive && correction != null)
                     CorrectionBar(correction, onUndoCorrection)
                 // A fresh copy or screenshot comes first (it disappears once you type).
-                else if (!toolsForced && !sensitive && showPasteChip && pastePreview != null &&
+                else if (!toolsForced && clipboardAllowed && showPasteChip && pastePreview != null &&
                     assist is AssistState.Idle
                 ) PasteBar(pastePreview, onShowTools, onPasteChip)
                 else if (!toolsForced && !sensitive && assist is AssistState.Idle &&
@@ -276,7 +278,7 @@ fun KeyboardUi(
                 ) SuggestionBar(suggestions, onShowTools, onSuggestion, onForgetSuggestion)
                 else Toolbar(sensitive || numberPad != null, mode, onMode, assist, onTranslate, onInsertChinese,
                     practice, onStartPractice, onHint, panelShown, togglePanel, onOpenSettings, tone, onTogglePolite, onExplain,
-                    showPasteChip && !sensitive, onPasteChip, canUndo && !sensitive, onUndo)
+                    showPasteChip && clipboardAllowed, onPasteChip, canUndo && !sensitive, onUndo, clipboardAllowed)
             }
             val panel: @Composable () -> Unit = {
                 if (!sensitive) when (mode) {
@@ -302,7 +304,7 @@ fun KeyboardUi(
                         {}, {}, {}, showNumberRow = false,
                     ) else EmojiGrid(emojiTab, recentEmoji, onEmoji)
                     // No clipboard or editing panel in password fields.
-                    Panel.Clipboard -> if (sensitive) letterKeys()
+                    Panel.Clipboard -> if (!clipboardAllowed) letterKeys()
                         else {
                             // Newest copy first (marked "Latest"), then pinned items, then older copies.
                             val latest = clipHistory.firstOrNull()
@@ -373,6 +375,7 @@ private fun Toolbar(
     onPasteChip: () -> Unit,
     canUndo: Boolean = false,
     onUndo: () -> Unit = {},
+    clipboardAllowed: Boolean = !sensitive,
 ) {
     val kb = LocalKb.current
     val loading = assist is AssistState.Loading || practice is PracticeState.Loading ||
@@ -408,7 +411,7 @@ private fun Toolbar(
         // ↶ undoes the last thing typed, pasted, inserted or corrected.
         if (canUndo) IconPill("↶", false, onClick = onUndo)
         IconPill("😊", panel == Panel.Emoji) { onPanel(Panel.Emoji) }
-        if (!sensitive) IconPill("📋", panel == Panel.Clipboard) { onPanel(Panel.Clipboard) }
+        if (clipboardAllowed) IconPill("📋", panel == Panel.Clipboard) { onPanel(Panel.Clipboard) }
         IconPill("✎", panel == Panel.Edit) { onPanel(Panel.Edit) }
         IconPill("⚙", false, onClick = onOpenSettings)
     }

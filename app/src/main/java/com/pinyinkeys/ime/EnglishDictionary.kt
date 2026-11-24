@@ -5,8 +5,8 @@ import android.util.Log
 
 /**
  * Offline English word list for suggestions and autocorrect.
- * Data: assets/en_words.txt (from AOSP LatinIME, Apache 2.0; see DICTIONARY_NOTICE.txt),
- * "word<TAB>frequency" per line, most common first. Everything stays in memory.
+ * Data: assets/en_words.txt (words from AOSP LatinIME, Apache 2.0; frequencies from
+ * wordfreq, CC BY-SA 4.0; see DICTIONARY_NOTICE.txt), "word<TAB>frequency" per line, most common first. Everything stays in memory.
  */
 class EnglishDictionary private constructor(
     /** lowercase word -> (word as written, frequency 0-255) */
@@ -63,10 +63,24 @@ class EnglishDictionary private constructor(
     /** Typos you've fixed yourself before (typed -> what you picked), learned on the phone. */
     @Volatile var learnedFixes: Map<String, String> = emptyMap()
 
+    /*
+     * How words are scored ("noisy channel", like other keyboards): every candidate gets
+     *   log-likelihood of the word itself (how common it is, [logP])
+     * + how well it fits the sentence so far ([boost], from NextWords; in the same units)
+     * - how unlikely your taps are if you meant it ([COST] x the edit cost below).
+     * Units are "nats" (natural log); +1 nat means about 2.7x more likely.
+     */
+
+    /** How common [w] is, in nats. The file's 0-255 column is (zipf - 1) x 40. */
+    private fun logP(lower: String): Double =
+        (byLower[lower]?.second ?: if (lower in userWords) USER_WORD_FREQ else 0).toDouble() / FREQ_PER_NAT
+
+    private fun written(lower: String) = byLower[lower]?.first ?: lower
+
     /**
-     * Up to [n] suggestions for a partly typed [typed] word, best first: your own past fix
-     * for this typo, likely corrections (using where you actually tapped, [touches]) and
-     * completions, ranked by frequency, closeness and [boost] (sentence context, habits).
+     * Up to [n] suggestions for a partly typed [typed] word, best first: your own past
+     * fixes and picks, likely corrections (using where you actually tapped, [touches]),
+     * completions and word splits ("ofthe" -> "of the"), ranked as described above.
      */
     fun suggest(
         typed: String,
@@ -74,131 +88,242 @@ class EnglishDictionary private constructor(
         boost: Map<String, Double> = emptyMap(),
         touches: List<Touch?> = emptyList(),
     ): List<String> {
-        if (typed.isEmpty()) return emptyList()
+        if (typed.isEmpty() || !isWordWithSlip(typed)) return emptyList()
         val lower = typed.lowercase()
         val scores = HashMap<String, Double>()
+        fun ctx(w: String) = boost[w] ?: 0.0
         fun consider(w: String, score: Double) {
             if (score > (scores[w] ?: Double.NEGATIVE_INFINITY)) scores[w] = score
         }
-        if (!isWordWithSlip(typed)) return emptyList()
-        preferred[lower]?.let { consider(it, 600.0) }           // the word you picked last time
-        learnedFixes[lower]?.let { consider(it, 500.0) }        // your own past fix wins
-        byLower[lower]?.let { consider(lower, it.second + 40.0) }  // exact word: strong
-        if (lower in userWords) consider(lower, 300.0)
-        apostropheFix(lower)?.let { consider(it, 400.0) }  // "arent" -> "aren't" first
-        // Completions: words starting with what's typed.
-        val start = lowerBound(lower)
-        var i = start
+        preferred[lower]?.let { consider(it, logP(it) + 8.0 + ctx(it)) }     // the word you picked last time
+        learnedFixes[lower]?.let { consider(it, logP(it) + 6.0 + ctx(it)) }  // your own past fix
+        if (lower in byLower || lower in userWords) consider(lower, logP(lower) + 2.5 + ctx(lower))
+        if (lower in userWords) consider(lower, 20.0)
+        apostropheFix(lower)?.let { consider(it, logP(it) + 3.0) }  // "arent" -> "aren't"
+        // Completions: words starting with what's typed (a small cost per missing letter).
+        var i = lowerBound(lower)
         var seen = 0
-        while (i < sorted.size && sorted[i].startsWith(lower) && seen < 1200) {
+        while (i < sorted.size && sorted[i].startsWith(lower) && seen < 3000) {
             val w = sorted[i]
-            if (w != lower) consider(w, byLower.getValue(w).second - 4.0 * (w.length - lower.length))
+            if (w != lower) consider(w, logP(w) - COMPLETION_COST * (w.length - lower.length) + ctx(w))
             i++; seen++
         }
-        // Corrections: one slip away (two for longer words), judged by where you tapped.
+        // Corrections: one or two slips away, judged by where you tapped.
         if (lower.length >= 2) {
             for ((w, cost) in corrections(lower, touches)) {
-                byLower[w]?.let { consider(w, it.second - cost * 30.0) }
+                if (w in byLower) consider(w, logP(w) - cost * COST + ctx(w))
+            }
+            if (lower !in byLower) bestSplit(lower, boost)?.let { (w, s) -> consider(w, s) }
+            if (lower !in byLower && lower.length >= 5) spatialMatch(lower, touches)?.let { (w, cost) ->
+                consider(w, logP(w) - cost * COST + ctx(w))
             }
         }
-        // Context and personal boosts: words that fit the sentence so far, or that you type
-        // often, move up (and are added even if the dictionary scan didn't reach them).
+        // Words that fit the sentence (or that you use) but weren't reached by the scan.
         for ((w, b) in boost) {
-            if (w.startsWith(lower) && w != lower) {
-                val base = byLower[w]?.second?.toDouble() ?: 120.0
-                val current = scores[w] ?: (base - 4.0 * (w.length - lower.length))
-                scores[w] = current + b
-            } else if (w in scores) scores[w] = scores.getValue(w) + b / 2
+            if (w.startsWith(lower) && w != lower && w !in scores) {
+                consider(w, logP(w).coerceAtLeast(USER_WORD_FREQ / FREQ_PER_NAT) - COMPLETION_COST * (w.length - lower.length) + b)
+            }
         }
         return scores.entries.sortedByDescending { it.value }.take(n)
-            .map { matchCase(byLower[it.key]?.first ?: it.key, typed) }
+            .map { matchCase(written(it.key), typed) }
     }
 
     /**
      * The word to autocorrect [typed] to when space is pressed, or null to leave it.
-     * Order: your own past fix for this typo; a missing apostrophe; then the best word one
-     * slip away (two for longer words) given where you tapped and the sentence so far.
-     * Words you use (yours or in the dictionary) are left alone, except a very rare word
-     * when your taps clearly point at a common one.
+     * Order: your own past fix or pick for this typo; a missing apostrophe; then the best
+     * candidate one or two slips away (or two words run together), if it's clearly more
+     * likely. A real word you typed is only replaced on very strong evidence.
      */
     fun autocorrect(typed: String, touches: List<Touch?> = emptyList(), boost: Map<String, Double> = emptyMap()): String? {
         val lower = typed.lowercase()
         if (lower in userWords) return null
         // A misspelling you corrected by picking a word before: use that word.
-        if (lower !in byLower) preferred[lower]?.let { return matchCase(byLower[it]?.first ?: it, typed) }
-        learnedFixes[lower]?.let { return matchCase(byLower[it]?.first ?: it, typed) }
+        if (lower !in byLower) preferred[lower]?.let { return matchCase(written(it), typed) }
+        learnedFixes[lower]?.let { return matchCase(written(it), typed) }
         // Keep the dictionary's capitals: "im" -> "I'm".
-        if (lower !in byLower) apostropheFix(lower)?.let { return matchCase(byLower[it]?.first ?: it, typed) }
+        if (lower !in byLower) apostropheFix(lower)?.let { return matchCase(written(it), typed) }
         if (typed == "i") return "I"
+        // A single letter other than "a"/"I", tapped right next to I or A: you meant that.
+        if (lower.length == 1 && lower[0] !in "ai") {
+            val t = touches.firstOrNull() ?: return null
+            return when {
+                subCost(lower[0], 'i', t) <= 0.35 -> "I"
+                subCost(lower[0], 'a', t) <= 0.35 -> matchCase("a", typed)
+                else -> null
+            }
+        }
         // "i'm", "i'll", "i've", "i'd" typed with the apostrophe: capital I.
         if (lower.startsWith("i'") && typed.startsWith("i") && lower in byLower) return "I" + typed.substring(1)
         if (lower.length < 2 || !isWordWithSlip(typed)) return null
-        val known = byLower[lower]?.second
-        val candidates = corrections(lower, touches).mapNotNull { (w, cost) ->
-            byLower[w]?.let { Triple(w, cost, it.second + (boost[w] ?: 0.0) / 3) }
+        fun ctx(w: String) = boost[w] ?: 0.0
+        var best: String? = null
+        var bestScore = Double.NEGATIVE_INFINITY
+        var bestCost = 0.0
+        for ((w, cost) in corrections(lower, touches)) {
+            val f = byLower[w]?.second ?: continue
+            if (f < MIN_FIX_FREQ) continue  // never "fix" to a very rare word
+            val score = logP(w) - cost * COST + ctx(w)
+            if (score > bestScore) { best = w; bestScore = score; bestCost = cost }
         }
-        val best = candidates.maxByOrNull { it.third - it.second * 45 } ?: return null
-        return when {
-            // A real word was typed: only replace a rare one, and only on strong evidence.
-            known != null -> if (known < 25 && best.second <= 0.3 && best.third >= 150) matchCase(byLower.getValue(best.first).first, typed) else null
-            best.second > 1.2 || best.third < 50 -> null  // not confident enough
-            else -> matchCase(byLower.getValue(best.first).first, typed)
-        }
-    }
-
-    /** One-slip corrections, plus two neighbour slips for words of 5+ letters. */
-    private fun corrections(w: String, touches: List<Touch?>): List<Pair<String, Double>> {
-        val one = edits(w, touches)
-        if (w.length < 5) return one
-        val out = ArrayList(one)
-        // Two slips: only cheap substitutions (neighbouring keys), to keep it fast and sane.
-        for ((w1, c1) in one) {
-            if (c1 > 0.6 || w1.length != w.length) continue
-            for (i in w1.indices) {
-                if (w1[i] != w[i]) continue  // don't change the same letter twice
-                for (c in NEIGHBOURS[w[i]] ?: "") {
-                    val cost = subCost(w[i], c, touches.getOrNull(i))
-                    if (cost <= 0.6) out += (w1.substring(0, i) + c + w1.substring(i + 1) to c1 + cost + 0.2)
-                }
+        val known = lower in byLower
+        // A word you stopped typing early ("someth" -> "something"): up to 4 letters more.
+        if (!known && lower.length >= 3) {
+            var i = lowerBound(lower)
+            var seen = 0
+            while (i < sorted.size && sorted[i].startsWith(lower) && seen < 3000) {
+                val w = sorted[i]; i++; seen++
+                val missing = w.length - lower.length
+                if (missing > 4 || (byLower[w]?.second ?: 0) < MIN_FIX_FREQ) continue
+                val cost = 0.25 * missing
+                val score = logP(w) - cost * COST + ctx(w)
+                if (score > bestScore) { best = w; bestScore = score; bestCost = cost }
             }
         }
-        return out
+        // Several slips onto neighbouring keys ("domerhinf" -> "something"): compare with
+        // words of the same length letter by letter.
+        if (!known && lower.length >= 5) spatialMatch(lower, touches)?.let { (w, cost) ->
+            val score = logP(w) - cost * COST + ctx(w)
+            if (score > bestScore) { best = w; bestScore = score; bestCost = minOf(cost, MAX_FIX_COST) }
+        }
+        if (!known) bestSplit(lower, boost)?.let { (w, s) -> if (s > bestScore) { best = w; bestScore = s; bestCost = 1.0 } }
+        val pick = best ?: return null
+        return if (known) {
+            // You typed a real word: replace it only for a single cheap slip that's far
+            // more likely here ("teh" -> "the"), never for a word that's merely common.
+            val keep = logP(lower) + ctx(lower) + KEEP_BONUS
+            if (bestCost <= 0.6 && bestScore - keep >= REAL_WORD_MARGIN) matchCase(written(pick), typed) else null
+        } else {
+            if (bestCost > MAX_FIX_COST) null else matchCase(if (' ' in pick) pick else written(pick), typed)
+        }
     }
 
-    /** Words one edit away (delete, swap, replace, insert), plus apostrophe fixes. */
-    private fun edits(w: String, touches: List<Touch?> = emptyList()): List<Pair<String, Double>> {
+    /**
+     * The best same-length word where every typed letter is the intended key or one next
+     * to it, with the summed slip cost (at most a quarter per letter plus a half), or null.
+     */
+    private fun spatialMatch(lower: String, touches: List<Touch?>): Pair<String, Double>? {
+        val limit = 0.5 + 0.25 * lower.length
+        var best: Pair<String, Double>? = null
+        var bestScore = Double.NEGATIVE_INFINITY
+        for ((key, entry) in byLower) {
+            if (key.length != lower.length || entry.second < MIN_FIX_FREQ) continue
+            var cost = 0.0
+            for (i in key.indices) {
+                val c = key[i]; val t = lower[i]
+                if (c == t) continue
+                if (c !in (NEIGHBOURS[t] ?: "")) { cost = Double.MAX_VALUE; break }
+                cost += subCost(t, c, touches.getOrNull(i))
+                if (cost > limit) break
+            }
+            if (cost > limit) continue
+            val score = logP(key) - cost * COST
+            if (score > bestScore) { bestScore = score; best = key to cost }
+        }
+        return best
+    }
+
+    /**
+     * Two words run together or with a slip instead of space: "ofthe" -> "of the",
+     * "thebcat" -> "the cat" (b/n/v/c/m are next to the space bar). Returns the best
+     * split and its score, or null.
+     */
+    private fun bestSplit(lower: String, boost: Map<String, Double>): Pair<String, Double>? {
+        if (lower.length < 4 || '\'' in lower) return null
+        fun ok(w: String) = (w.length >= 2 || w == "a" || w == "i") && (byLower[w]?.second ?: 0) >= MIN_FIX_FREQ
+        var best: Pair<String, Double>? = null
+        fun offer(l: String, r: String, penalty: Double) {
+            if (!ok(l) || !ok(r)) return
+            // Two words are less likely than one: a word's real probability is
+            // logP - SECOND_WORD (zipf counts per billion words), so the pair scores this.
+            val s = logP(l) + logP(r) - SECOND_WORD - penalty + (boost[l] ?: 0.0)
+            val words = written(l) + " " + written(r)
+            if (best == null || s > best!!.second) best = words to s
+        }
+        for (i in 1 until lower.length) {
+            offer(lower.substring(0, i), lower.substring(i), SPLIT_COST)                  // missed space
+            if (i < lower.length - 1 && lower[i] in "cvbnm")
+                offer(lower.substring(0, i), lower.substring(i + 1), SPLIT_COST + 1.0)   // hit b/n/... for space
+        }
+        return best
+    }
+
+    /**
+     * Candidate words and how costly the slips are that turn them into what was typed:
+     * one slip, plus two slips (only cheap ones for the second) for words of 3+ letters.
+     */
+    private fun corrections(w: String, touches: List<Touch?>): List<Pair<String, Double>> {
+        val best = HashMap<String, Double>(w.length * 120)
+        fun add(c: String, cost: Double) { if (cost < (best[c] ?: Double.MAX_VALUE)) best[c] = cost }
+        val one = edits(w, touches, cheapOnly = false)
+        for ((c, cost) in one) add(c, cost)
+        if (w.length >= 3) {
+            for ((c1, cost1) in one) {
+                if (cost1 > 0.9) continue
+                // Touch positions only line up for edits that keep the length.
+                val t = if (c1.length == w.length) touches else emptyList()
+                for ((c2, cost2) in edits(c1, t, cheapOnly = true)) add(c2, cost1 + cost2 + 0.3)
+            }
+        }
+        return best.entries.map { it.key to it.value }
+    }
+
+    /**
+     * Words one edit away from [w], with the edit's cost (lower = a more likely slip):
+     * missed letter (typed "helo") 0.3 if it's a double letter, else 0.6; extra letter
+     * 0.35 if doubled ("helllo"), 0.6 next to a neighbour key, else 0.9; swapped letters
+     * 0.5; wrong key by [subCost]. [cheapOnly] keeps just the likely slips.
+     */
+    private fun edits(w: String, touches: List<Touch?> = emptyList(), cheapOnly: Boolean): List<Pair<String, Double>> {
         val out = ArrayList<Pair<String, Double>>(w.length * 60)
         val letters = "abcdefghijklmnopqrstuvwxyz'"
         for (i in w.indices) {
-            out += (w.removeRange(i, i + 1) to 1.0)
-            if (i + 1 < w.length) out += (w.substring(0, i) + w[i + 1] + w[i] + w.substring(i + 2) to 0.8)
-            for (c in letters) if (c != w[i]) {
+            // An extra letter typed: drop it.
+            val extra = when {
+                i > 0 && w[i] == w[i - 1] -> 0.35
+                (i > 0 && w[i] in (NEIGHBOURS[w[i - 1]] ?: "")) || (i + 1 < w.length && w[i] in (NEIGHBOURS[w[i + 1]] ?: "")) -> 0.6
+                else -> 0.9
+            }
+            if (!cheapOnly || extra <= 0.6) out += (w.removeRange(i, i + 1) to extra)
+            if (i + 1 < w.length && w[i] != w[i + 1]) out += (w.substring(0, i) + w[i + 1] + w[i] + w.substring(i + 2) to 0.5)
+            // A wrong key.
+            val subs = if (cheapOnly) (NEIGHBOURS[w[i]] ?: "") else letters
+            for (c in subs) if (c != w[i]) {
                 out += (w.substring(0, i) + c + w.substring(i + 1) to subCost(w[i], c, touches.getOrNull(i)))
             }
         }
-        for (i in 0..w.length) for (c in letters) out += (w.substring(0, i) + c + w.substring(i) to if (c == '\'') 0.3 else 1.0)
+        // A missed letter: put it back.
+        for (i in 0..w.length) {
+            if (cheapOnly) {
+                if (i > 0) out += (w.substring(0, i) + w[i - 1] + w.substring(i) to 0.3)  // double letter
+                continue
+            }
+            for (c in letters) {
+                val cost = when {
+                    c == '\'' -> 0.2
+                    (i > 0 && c == w[i - 1]) || (i < w.length && c == w[i]) -> 0.3
+                    else -> 0.6
+                }
+                out += (w.substring(0, i) + c + w.substring(i) to cost)
+            }
+        }
         return out
     }
 
     /**
      * How unlikely it is that you meant [meant] when the keyboard got [typed]. With the
-     * tap position we measure how far your finger was from [meant]'s key; without it,
-     * neighbouring keys count as likely slips.
+     * tap position we measure how far your finger was from [meant]'s key (smoothly: the
+     * farther, the less likely); without it, neighbouring keys count as likely slips.
      */
     private fun subCost(typed: Char, meant: Char, touch: Touch?): Double {
         val a = KEY_POS[typed] ?: return 1.0
         val b = KEY_POS[meant] ?: return 1.0
-        if (touch == null) return if (meant in (NEIGHBOURS[typed] ?: "")) 0.6 else 1.0
+        if (touch == null) return if (meant in (NEIGHBOURS[typed] ?: "")) 0.6 else 1.1
         val bias = touchBias[typed]
         val x = a.first + touch.dx - (bias?.dx ?: 0f)
-        val y = a.second + touch.dy - (bias?.dy ?: 0f)
-        val d = kotlin.math.hypot((x - b.first).toDouble(), (y - b.second).toDouble())
-        return when {
-            d < 0.75 -> 0.25
-            d < 1.15 -> 0.55
-            d < 1.6 -> 0.85
-            else -> 1.1
-        }
+        // Keys are taller than wide, so a vertical miss of one row counts a bit less.
+        val y = (a.second + touch.dy - (bias?.dy ?: 0f)) * 0.85f
+        val d = kotlin.math.hypot((x - b.first).toDouble(), (y - b.second * 0.85f).toDouble())
+        return (0.15 + (d - 0.5).coerceAtLeast(0.0) * 0.9).coerceAtMost(1.3)
     }
 
     private fun lowerBound(key: String): Int {
@@ -208,6 +333,26 @@ class EnglishDictionary private constructor(
     }
 
     companion object {
+        // Scoring constants (see the comment above suggest()); tuned with KeyboardLogicTest.
+        /** The frequency column is (zipf - 1) x 40, and one zipf step is ln(10) = 2.3 nats. */
+        private const val FREQ_PER_NAT = 40.0 / 2.302585
+        /** Nats per unit of edit cost (cost 1.0 = about 1 in 90). */
+        private const val COST = 4.5
+        /** Per letter still to type in a completion. */
+        private const val COMPLETION_COST = 0.12
+        /** Your own words count as moderately common (zipf 4). */
+        private const val USER_WORD_FREQ = 120
+        /** Fix only to words at least this common (zipf 1.75), and up to this total edit cost. */
+        private const val MIN_FIX_FREQ = 30
+        private const val MAX_FIX_COST = 1.6
+        /** A real word you typed is kept unless a slip-away word is this much more likely. */
+        private const val KEEP_BONUS = 1.0
+        private const val REAL_WORD_MARGIN = 3.5
+        /** Splitting one typed word into two. */
+        private const val SPLIT_COST = 2.5
+        /** ln(10^8): converts the second word's frequency into a real probability. */
+        private const val SECOND_WORD = 8 * 2.302585
+
         /** Centre of each letter key on the QWERTY grid, in key widths / rows. */
         private val KEY_POS: Map<Char, Pair<Float, Float>> = buildMap {
             "qwertyuiop".forEachIndexed { i, c -> put(c, i + 0.5f to 0f) }

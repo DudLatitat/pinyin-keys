@@ -94,6 +94,10 @@ class PinyinKeysService : InputMethodService(),
     // --- Undo / redo (see Undo.kt) ---
     private val undoHistory = UndoHistory()
     private val canUndo = mutableStateOf(false)
+    /** A terminal app (see isTerminal): plain keyboard, but the clipboard is allowed. */
+    private val terminalField = mutableStateOf(false)
+    /** No clipboard in password fields (terminals excepted). */
+    private val clipBlocked get() = sensitiveField.value && !terminalField.value
     private var hasSelection = false
     private var rawConnection: android.view.inputmethod.InputConnection? = null
     private var recording: RecordingConnection? = null
@@ -285,6 +289,7 @@ class PinyinKeysService : InputMethodService(),
             setContent {
                 KeyboardUi(
                     sensitive = sensitiveField.value,
+                    clipboardAllowed = !clipBlocked,
                     assist = assistState.value,
                     mode = mode.value,
                     onMode = ::setMode,
@@ -364,6 +369,7 @@ class PinyinKeysService : InputMethodService(),
     override fun onStartInputView(info: EditorInfo?, restarting: Boolean) {
         super.onStartInputView(info, restarting)
         sensitiveField.value = info != null && isSensitive(info)
+        terminalField.value = info != null && isTerminal(info)
         numberPad.value = info?.let { NumberPadKind.forInputType(it.inputType) }
         enterLabel.value = info?.let { enterLabelFor(it) }
         // New text field: forget the previous translation.
@@ -550,6 +556,7 @@ class PinyinKeysService : InputMethodService(),
         suggestJob?.cancel()
         // Anything else ends the word: maybe autocorrect it, then learn it.
         finishWord(ic, autocorrectOnly = c != null && (c == ' ' || c in ".,?!"))
+        if (c != ' ') prevNonWord = null  // only "word space word" can be joined
         if (c != null && c in ".?!") sentence.clear()  // new sentence
         suggestions.value = if (c == ' ' && suggestionsAllowed()) predictions() else emptyList()
 
@@ -863,8 +870,32 @@ class PinyinKeysService : InputMethodService(),
         val touches = touchesForWord()
         wordTouches.clear()
         currentWord = ""
+        val prev = prevNonWord
+        prevNonWord = null
         if (word.isEmpty() || !suggestionsAllowed()) return
         var final = word
+        val dict = english
+        // A space typed inside a word ("th e", "beca use"): the last word wasn't a word,
+        // and joined with this one it is. Put them back together.
+        if (autocorrectOnly && prev != null && dict != null && Settings(this).autocorrect) {
+            val joined = prev + word
+            val expect = "$prev $word"
+            if (dict.isWord(joined) && (!dict.isWord(word) || word.length <= 2) &&
+                ic.getTextBeforeCursor(expect.length, 0)?.toString() == expect
+            ) {
+                markOwnEdit()
+                ic.deleteSurroundingText(expect.length, 0)
+                ic.commitText(joined, 1)
+                if (sentence.isNotEmpty()) sentence.removeAt(sentence.lastIndex)
+                lastAutocorrect = expect to joined
+                correctionNotice.value = expect to joined
+                mainHandler.removeCallbacks(hideCorrection)
+                mainHandler.postDelayed(hideCorrection, 2500)
+                nextWords?.learn(sentence, joined)
+                addToSentence(joined)
+                return
+            }
+        }
         if (autocorrectOnly && Settings(this).autocorrect) {
             val fix = english?.autocorrect(word, touches, nextWords?.boosts(sentence.toList()) ?: emptyMap())
             if (fix != null && fix != word) {
@@ -886,14 +917,24 @@ class PinyinKeysService : InputMethodService(),
             editDistance(erased.lowercase(), final.lowercase()) in 1..2
         ) learnFix(erased.lowercase(), final.lowercase())
         if (final == word) learnTouches(word, touches)
-        nextWords?.learn(sentence, final)
+        // A split ("ofthe" -> "of the") is learned word by word.
+        for (part in final.split(' ')) {
+            nextWords?.learn(sentence, part)
+            addToSentence(part)
+        }
         if (++wordsSinceSave >= 30) saveLearning()
+        if (' ' in final) return
         // A word you've typed a few times that isn't in the dictionary (slang, names) is
-        // yours: stop "correcting" it.
-        if (english?.isWord(final) == false && (nextWords?.count(final) ?: 0) >= 2) keepWord(final)
-        if (english?.isWord(final) == false && final == word && final.all { it.isLetter() || it == '\'' }) messageNewWords += final
-        addToSentence(final)
+        // yours: stop "correcting" it. (3 times, so a habitual typo isn't locked in.)
+        if (english?.isWord(final) == false && (nextWords?.count(final) ?: 0) >= 3) keepWord(final)
+        if (english?.isWord(final) == false && final == word && final.all { it.isLetter() || it == '\'' }) {
+            messageNewWords += final
+            prevNonWord = final  // may be joined with the next word (see above)
+        }
     }
+
+    /** The last finished word, if it wasn't a word and was left as typed. */
+    private var prevNonWord: String? = null
 
     /** Does this text box want automatic capitals? (decided once per box) */
     private val capsField: Boolean
@@ -1031,7 +1072,7 @@ class PinyinKeysService : InputMethodService(),
      * that's currently in use read the clipboard.
      */
     private fun readClipboard(): String? {
-        if (sensitiveField.value) return null
+        if (clipBlocked) return null
         val cm = getSystemService(android.content.ClipboardManager::class.java) ?: return null
         val clip = cm.primaryClip ?: return null
         if (clip.itemCount == 0) return null
@@ -1042,7 +1083,8 @@ class PinyinKeysService : InputMethodService(),
         if (composing.value.isNotEmpty()) commitFirstCandidate()
         clearAssist()
         markOwnEdit()
-        currentInputConnection?.commitText(text, 1)
+        if (rawKeyField) sendRaw(text)  // terminals take key presses
+        else currentInputConnection?.commitText(text, 1)
         showPasteChip.value = false
         currentWord = ""
         suggestions.value = emptyList()
@@ -1082,7 +1124,7 @@ class PinyinKeysService : InputMethodService(),
      * and offer it with the Paste button. Skips sensitive clips and password fields.
      */
     private fun onClipChanged() {
-        if (sensitiveField.value) return
+        if (clipBlocked) return
         val cm = getSystemService(android.content.ClipboardManager::class.java) ?: return
         val desc = cm.primaryClipDescription ?: return
         if (isSensitiveClip(desc)) return
@@ -1120,7 +1162,7 @@ class PinyinKeysService : InputMethodService(),
     /** On keyboard open: catch a copy made while the keyboard wasn't running. */
     private fun checkRecentCopy() {
         showPasteChip.value = false
-        if (sensitiveField.value) return
+        if (clipBlocked) return
         val cm = getSystemService(android.content.ClipboardManager::class.java) ?: return
         val desc = cm.primaryClipDescription ?: return
         if (desc.timestamp != lastSeenClipTime && System.currentTimeMillis() - desc.timestamp < 60_000) {
@@ -1726,6 +1768,14 @@ class PinyinKeysService : InputMethodService(),
         }
     }
 
+    /**
+     * Terminal / SSH apps: they mark their input as "raw keys" or as a visible password
+     * (to turn off autocorrect), but they aren't password fields. They still get the
+     * plain keyboard, plus the clipboard (owner's decision; see CLAUDE.md).
+     */
+    private fun isTerminal(info: EditorInfo): Boolean =
+        info.inputType == InputType.TYPE_NULL || info.packageName in TERMINAL_APPS
+
     private fun isSensitive(info: EditorInfo): Boolean {
         val cls = info.inputType and InputType.TYPE_MASK_CLASS
         val variation = info.inputType and InputType.TYPE_MASK_VARIATION
@@ -1742,6 +1792,13 @@ class PinyinKeysService : InputMethodService(),
     }
 
     companion object {
+        /** Well-known terminal / SSH apps (public package names). */
+        private val TERMINAL_APPS = setOf(
+            "com.server.auditor.ssh.client",  // Termius
+            "com.termux",
+            "com.sonelli.juicessh",
+            "org.connectbot",
+        )
         private const val TAG = "PinyinKeys"
         private const val MAX_FIELD_CHARS = 10_000
         /** Marks the "keep exactly what I typed" suggestion. */

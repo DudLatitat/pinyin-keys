@@ -21,3 +21,10 @@ common next words after common one- and two-word contexts (see tools/build_phras
 
 emoji_names.tsv: emoji names and keywords from emojibase-data 15.3.2
 (https://github.com/milesj/emojibase), MIT licence, derived from Unicode CLDR annotations.
+
+en_words.txt frequencies: wordfreq 3.1.1 (https://github.com/rspeer/wordfreq) by Robyn Speer,
+data licensed CC BY-SA 4.0 (https://creativecommons.org/licenses/by-sa/4.0/). The word
+list itself is from LatinIME (above); built with tools/build_english_freqs.py.
+
+en_phrases.txt: next-word counts from Tatoeba English sentences (https://tatoeba.org),
+CC BY 2.0 FR; built with tools/build_phrase_table.py.

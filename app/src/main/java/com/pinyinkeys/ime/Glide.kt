@@ -83,8 +83,7 @@ object GlideDecoder {
             var sum = 0.0
             for (k in 0 until SAMPLES) sum += dist(user[k], ideal[k])
             val d = sum / SAMPLES / keyW
-            val f = freq + (boost[word.lowercase()] ?: 0.0) / 3
-            scored += word to (-d * 3.0 + f / 255.0 * 2.0)
+            scored += word to (-d * 3.0 + freq / 255.0 * 2.0 + (boost[word.lowercase()] ?: 0.0) * 0.3)
         }
         return scored.sortedByDescending { it.second }.map { it.first }.distinct().take(n)
     }

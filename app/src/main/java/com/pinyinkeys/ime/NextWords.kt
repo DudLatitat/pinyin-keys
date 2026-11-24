@@ -13,8 +13,8 @@ import android.content.Context
 class NextWords(private val context: Context) {
     // context ("w1" or "w1 w2", lowercase) -> (next word -> count), learned from you
     private val learned = HashMap<String, HashMap<String, Int>>()
-    // context -> up to 3 common next words, from the bundled phrase table
-    private val phrases = HashMap<String, List<String>>(60_000)
+    // context -> up to 6 common next words with how often each followed it (phrase table)
+    private val phrases = HashMap<String, List<Pair<String, Int>>>(120_000)
     private var dirty = false
     /** How often you've typed each word (lowercase), for ranking your own words higher. */
     private val wordCounts = HashMap<String, Int>()
@@ -39,10 +39,16 @@ class NextWords(private val context: Context) {
     }
 
     private fun loadPhrases() {
-        context.assets.open("en_phrases.txt").bufferedReader().useLines { lines ->
-            lines.forEach { line ->
-                val t = line.indexOf('\t')
-                if (t > 0) phrases[line.substring(0, t)] = line.substring(t + 1).split(' ')
+        context.assets.open("en_phrases.txt").bufferedReader().useLines(::loadPhrases)
+    }
+
+    /** "context<TAB>word:count word:count ..." lines (also used by unit tests). */
+    internal fun loadPhrases(lines: Sequence<String>) {
+        lines.forEach { line ->
+            val t = line.indexOf('\t')
+            if (t > 0) phrases[line.substring(0, t)] = line.substring(t + 1).split(' ').mapNotNull { e ->
+                val c = e.lastIndexOf(':')
+                if (c > 0) e.substring(0, c) to (e.substring(c + 1).toIntOrNull() ?: 1) else null
             }
         }
     }
@@ -58,26 +64,43 @@ class NextWords(private val context: Context) {
         dirty = true
     }
 
+    /**
+     * How well each word fits after [before], in nats (see EnglishDictionary): your own
+     * habits (log of how often you typed it there) blended with the phrase table (the
+     * share of times it followed). Two-word contexts count more than one-word ones, so a
+     * pair you typed once doesn't beat a strong common phrase.
+     */
+    private fun scores(before: List<String>): Map<String, Double> {
+        val out = HashMap<String, Double>()
+        fun add(w: String, v: Double) { out[w] = (out[w] ?: 0.0) + v }
+        contexts(before).forEachIndexed { i, c ->
+            val two = i == 0 && ' ' in c
+            learned[c]?.forEach { (w, n) -> add(w, (if (two) 2.0 else 1.4) * kotlin.math.ln(1.0 + n)) }
+            phrases[c]?.let { list ->
+                val total = list.sumOf { it.second }.toDouble()
+                list.forEach { (w, n) -> add(w, (if (two) 6.0 else 4.0) * n / total) }
+            }
+        }
+        return out
+    }
+
     /** Most likely next words after [before] (the sentence so far), best first. */
     fun predict(before: List<String>, n: Int = 3): List<String> {
         val out = LinkedHashSet<String>()
-        val ctx = contexts(before)  // two-word context first, then one-word
-        // Your own habits first (two-word context beats one-word), then common phrases.
-        for (c in ctx) learned[c]?.entries?.sortedByDescending { it.value }?.forEach { out += it.key }
-        for (c in ctx) phrases[c]?.let { out += it }
+        scores(before).entries.sortedByDescending { it.value }.forEach { out += it.key }
         out += DEFAULTS
         return out.take(n)
     }
 
     /**
-     * Boosts for completing the word being typed: likely next words after [before] (from
-     * your habits and the phrase table) and words you type often.
+     * Context for the word being typed (in nats, added to its score): how well it fits
+     * after [before], plus a little for words you type often.
      */
     fun boosts(before: List<String>): Map<String, Double> {
         val out = HashMap<String, Double>()
-        predict(before, 25).forEachIndexed { i, w -> out[w.lowercase()] = 90.0 - i * 3 }
+        for ((w, v) in scores(before)) out[w.lowercase()] = (out[w.lowercase()] ?: 0.0) + v * 0.6
         for ((w, c) in wordCounts) if (c >= 2) {
-            out[w] = (out[w] ?: 0.0) + minOf(60.0, c * 6.0)
+            out[w] = (out[w] ?: 0.0) + minOf(1.5, 0.5 * kotlin.math.ln(1.0 + c))
         }
         return out
     }
@@ -120,7 +143,7 @@ class NextWords(private val context: Context) {
         if (!dirty) return
         dirty = false
         val lines = learned.flatMap { (p, m) -> m.map { (n, c) -> Triple(p, n, c) } }
-            .sortedByDescending { it.third }.take(8000)
+            .sortedByDescending { it.third }.take(15000)
             .joinToString("\n") { "${it.first}\t${it.second}\t${it.third}" }
         Settings(context).nextWordData = lines
     }
