@@ -79,7 +79,8 @@ Git author identity: commits use the GitHub noreply email, never a personal emai
   changes. Nothing is kept in password or no-learning fields.
 - Glide typing uses the finger's path only to pick the word; the path is never stored.
 - Typing style is learned the same way, on the phone only: typos fixed by picking a
-  suggestion, words typed repeatedly that aren't in the dictionary, and word counts.
+  suggestion, words typed repeatedly that aren't in the dictionary, word counts, and words
+  written with a capital mid-sentence (names).
   Tap positions on keys are used for autocorrect while typing and never stored.
 
 ## Dependencies

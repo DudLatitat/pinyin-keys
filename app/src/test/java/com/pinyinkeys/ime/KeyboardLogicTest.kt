@@ -139,6 +139,27 @@ class KeyboardLogicTest {
         assertTrue(!english.isPlausibleFix("cat", "elephant"))
     }
 
+    @Test fun chineseForWords() {
+        val zh = EnZh.fromLines(File("src/main/assets/en_zh.tsv").readLines().asSequence())
+        assertEquals("吃", zh.lookup("eat")?.first)
+        assertEquals("猫", zh.lookup("cats")?.first)
+        assertNull(zh.lookup("the"))
+    }
+
+    @Test fun emojiForWords() {
+        val search = EmojiSearch.fromLines(File("src/main/assets/emoji_names.tsv").readLines().asSequence())
+        assertTrue(search.forWord("pizza") == "🍕")
+        assertNull(search.forWord("face"))
+    }
+
+    @Test fun learnedCapitals() {
+        english.capWords = setOf("lin")
+        try {
+            assertEquals("Lin", english.autocorrect("lin"))
+            assertNull(english.autocorrect("Lin"))
+        } finally { english.capWords = emptySet() }
+    }
+
     @Test fun capitalI() {
         assertEquals("I'm", english.autocorrect("im"))
     }

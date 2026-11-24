@@ -148,9 +148,14 @@ class Settings(context: Context) {
 
     /** Forget everything the keyboard learned about your typing. */
     fun forgetAllLearning() {
-        prefs.edit().remove("learned_fixes").remove("user_words").remove("next_words").remove("touch_bias").remove("preferred_picks")
+        prefs.edit().remove("learned_fixes").remove("user_words").remove("next_words").remove("touch_bias").remove("preferred_picks").remove("cap_counts")
             .putInt("learn_version", learnVersion + 1).apply()
     }
+
+    /** Words you write with a capital mid-sentence ("word<TAB>count"; + = capitalised). */
+    var capCounts: List<String>
+        get() = readList("cap_counts")
+        set(v) = writeList("cap_counts", v)
 
     /** Words you picked instead of what you typed ("typed<TAB>picked"). */
     var preferredPicks: List<String>

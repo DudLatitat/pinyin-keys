@@ -14,6 +14,9 @@ class EnglishDictionary private constructor(
     /** all lowercase words, sorted, for prefix search */
     private val sorted: Array<String>,
 ) {
+    /** Words you always write with a capital (names...), lowercase; learned on the phone. */
+    @Volatile var capWords: Set<String> = emptySet()
+
     /** Words the user chose to keep (e.g. by undoing an autocorrect); never "corrected". */
     @Volatile var userWords: Set<String> = emptySet()
 
@@ -75,7 +78,8 @@ class EnglishDictionary private constructor(
     private fun logP(lower: String): Double =
         (byLower[lower]?.second ?: if (lower in userWords) USER_WORD_FREQ else 0).toDouble() / FREQ_PER_NAT
 
-    private fun written(lower: String) = byLower[lower]?.first ?: lower
+    private fun written(lower: String) =
+        if (lower in capWords) lower.replaceFirstChar { it.uppercaseChar() } else byLower[lower]?.first ?: lower
 
     /**
      * Up to [n] suggestions for a partly typed [typed] word, best first: your own past
@@ -143,6 +147,8 @@ class EnglishDictionary private constructor(
         lm: ((String) -> Double)? = null,
     ): String? {
         val lower = typed.lowercase()
+        // A name you always capitalise, typed in lowercase: capitalise it.
+        if (typed == lower && lower in capWords) return written(lower)
         if (lower in userWords) return null
         if (useLearned) {
             // A misspelling you corrected by picking a word before: use that word.

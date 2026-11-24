@@ -31,3 +31,6 @@ CC BY 2.0 FR; built with tools/build_phrase_table.py.
 
 en_lm.bin: counts of 1-, 2- and 3-word sequences from Tatoeba English sentences
 (https://tatoeba.org), CC BY 2.0 FR; built with tools/build_ngram_lm.py.
+
+en_zh.tsv: English -> Chinese words from CC-CEDICT (https://www.mdbg.net/chinese/dictionary?page=cc-cedict),
+CC BY-SA 4.0, chosen using wordfreq Chinese frequencies (CC BY-SA 4.0); built with tools/build_en_zh.py.

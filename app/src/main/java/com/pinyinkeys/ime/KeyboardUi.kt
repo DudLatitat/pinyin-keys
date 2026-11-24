@@ -2,6 +2,21 @@ package com.pinyinkeys.ime
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.Undo
+import androidx.compose.material.icons.automirrored.outlined.VolumeUp
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.outlined.ContentPaste
+import androidx.compose.material.icons.outlined.ContentPasteGo
+import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material.icons.outlined.EmojiEmotions
+import androidx.compose.material.icons.outlined.KeyboardDoubleArrowLeft
+import androidx.compose.material.icons.outlined.KeyboardDoubleArrowRight
+import androidx.compose.material.icons.outlined.OpenInFull
+import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.outlined.StarBorder
+import androidx.compose.material3.Icon
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.unit.toSize
@@ -207,6 +222,9 @@ fun KeyboardUi(
     onPasteChip: () -> Unit,
     pastePreview: String?,
     suggestions: List<String>,
+    wordHint: WordHint? = null,
+    onHintEmoji: (String) -> Unit = {},
+    onHintChinese: (String) -> Unit = {},
     onSuggestion: (String) -> Unit,
     onForgetSuggestion: (String) -> Unit,
     toolsForced: Boolean,
@@ -275,7 +293,7 @@ fun KeyboardUi(
                 ) PasteBar(pastePreview, onShowTools, onPasteChip)
                 else if (!toolsForced && !sensitive && assist is AssistState.Idle &&
                     (mode == Mode.Assist || practice is PracticeState.Idle) && suggestions.isNotEmpty()
-                ) SuggestionBar(suggestions, onShowTools, onSuggestion, onForgetSuggestion)
+                ) SuggestionBar(suggestions, onShowTools, onSuggestion, onForgetSuggestion, wordHint, onHintEmoji, onHintChinese)
                 else Toolbar(sensitive || numberPad != null, mode, onMode, assist, onTranslate, onInsertChinese,
                     practice, onStartPractice, onHint, panelShown, togglePanel, onOpenSettings, tone, onTogglePolite, onExplain,
                     showPasteChip && clipboardAllowed, onPasteChip, canUndo && !sensitive, onUndo, clipboardAllowed)
@@ -387,7 +405,7 @@ private fun Toolbar(
         horizontalArrangement = Arrangement.SpaceEvenly,
     ) {
         // Something was just copied: offer it.
-        if (showPasteChip) IconPill("📋", true, onClick = onPasteChip)
+        if (showPasteChip) IconPill(Icons.Outlined.ContentPasteGo, "Paste", true, onClick = onPasteChip)
         if (!sensitive) {
             // 助 = Assist (help), 练 = Practice. Tap to switch.
             IconPill(if (mode == Mode.Assist) "助" else "练", true) {
@@ -409,15 +427,30 @@ private fun Toolbar(
             if (mode == Mode.Practice && practice is PracticeState.Active && !practice.done) Pill("Hint", onClick = onHint)
         }
         // ↶ undoes the last thing typed, pasted, inserted or corrected.
-        if (canUndo) IconPill("↶", false, onClick = onUndo)
-        IconPill("😊", panel == Panel.Emoji) { onPanel(Panel.Emoji) }
-        if (clipboardAllowed) IconPill("📋", panel == Panel.Clipboard) { onPanel(Panel.Clipboard) }
-        IconPill("✎", panel == Panel.Edit) { onPanel(Panel.Edit) }
-        IconPill("⚙", false, onClick = onOpenSettings)
+        if (canUndo) IconPill(Icons.AutoMirrored.Outlined.Undo, "Undo", false, onClick = onUndo)
+        // No emoji in password fields (terminals, which allow the clipboard, keep it).
+        if (!sensitive || clipboardAllowed) IconPill(Icons.Outlined.EmojiEmotions, "Emoji", panel == Panel.Emoji) { onPanel(Panel.Emoji) }
+        if (clipboardAllowed) IconPill(Icons.Outlined.ContentPaste, "Clipboard", panel == Panel.Clipboard) { onPanel(Panel.Clipboard) }
+        IconPill(Icons.Outlined.Edit, "Edit", panel == Panel.Edit) { onPanel(Panel.Edit) }
+        IconPill(Icons.Outlined.Settings, "Settings", false, onClick = onOpenSettings)
     }
 }
 
-/** A round icon button in the toolbar; [active] when its panel is open. */
+/** A round toolbar button with a line icon (themed, like a standard keyboard). */
+@Composable
+private fun IconPill(icon: ImageVector, description: String, active: Boolean, enabled: Boolean = true, onClick: () -> Unit) {
+    val kb = LocalKb.current
+    Box(
+        Modifier
+            .size(34.dp)
+            .clip(RoundedCornerShape(17.dp))
+            .background(if (active) kb.key else kb.functionKey)
+            .clickable(enabled = enabled, onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) { Icon(icon, description, Modifier.size(20.dp), tint = kb.label.copy(alpha = if (enabled) 1f else 0.4f)) }
+}
+
+/** A round icon button in the toolbar with a text label (译, 解...); [active] when its panel is open. */
 @Composable
 private fun IconPill(icon: String, active: Boolean, enabled: Boolean = true, onClick: () -> Unit) {
     val kb = LocalKb.current
@@ -939,10 +972,11 @@ private fun SentenceCard(
             // 🔊 reads the Chinese aloud; ☆/★ saves the sentence.
             val speak = LocalSpeak.current
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                SmallIcon("🔊") { speak(sentence.hanzi) }
+                SmallIcon(Icons.AutoMirrored.Outlined.VolumeUp, "Read aloud") { speak(sentence.hanzi) }
                 when (saved) {
                     Load.Loading -> CircularProgressIndicator(Modifier.padding(6.dp).size(16.dp), strokeWidth = 2.dp)
-                    else -> SmallIcon(if (saved is Load.Loaded) "★" else "☆", enabled = saved !is Load.Loaded, onClick = onSave)
+                    else -> SmallIcon(if (saved is Load.Loaded) Icons.Filled.Star else Icons.Outlined.StarBorder, "Save",
+                        enabled = saved !is Load.Loaded, onClick = onSave)
                 }
             }
         }
@@ -1063,7 +1097,15 @@ private fun ToolsButton(onClick: () -> Unit) {
 /** Three word suggestions, best in the middle (like other keyboards). Tap to use one. */
 @Composable
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
-private fun SuggestionBar(words: List<String>, onTools: () -> Unit, onPick: (String) -> Unit, onForget: (String) -> Unit) {
+private fun SuggestionBar(
+    words: List<String>,
+    onTools: () -> Unit,
+    onPick: (String) -> Unit,
+    onForget: (String) -> Unit,
+    hint: WordHint? = null,
+    onHintEmoji: (String) -> Unit = {},
+    onHintChinese: (String) -> Unit = {},
+) {
     val kb = LocalKb.current
     // Order on screen: 2nd, 1st (middle, bold), 3rd.
     val shown = when (words.size) {
@@ -1105,7 +1147,22 @@ private fun SuggestionBar(words: List<String>, onTools: () -> Unit, onPick: (Str
                 }
             }
         }
-        Box(Modifier.width(40.dp))
+        // The Chinese for the word (tap: hear it; hold: type it instead) and an emoji.
+        val speak = LocalSpeak.current
+        if (hint?.hanzi != null) Column(
+            Modifier.padding(horizontal = 2.dp).clip(RoundedCornerShape(8.dp)).background(kb.key)
+                .combinedClickable(onClick = { speak(hint.hanzi) }, onLongClick = { onHintChinese(hint.hanzi) })
+                .padding(horizontal = 8.dp, vertical = 2.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Text(hint.hanzi, fontSize = 15.sp, color = kb.label, maxLines = 1)
+            hint.pinyin?.let { Text(it, fontSize = 10.sp, color = kb.accent, maxLines = 1) }
+        }
+        if (hint?.emoji != null) Box(
+            Modifier.size(38.dp).clip(RoundedCornerShape(8.dp)).clickable { onHintEmoji(hint.emoji) },
+            contentAlignment = Alignment.Center,
+        ) { Text(hint.emoji, fontSize = 22.sp) }
+        if (hint == null) Box(Modifier.width(40.dp)) else Spacer(Modifier.width(4.dp))
     }
 }
 
@@ -1125,7 +1182,8 @@ private fun PasteBar(preview: String, onTools: () -> Unit, onPaste: () -> Unit) 
                     .padding(horizontal = 14.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text("📋 ", fontSize = 14.sp)
+                Icon(Icons.Outlined.ContentPaste, null, Modifier.size(16.dp), tint = kb.label)
+                Spacer(Modifier.width(6.dp))
                 Text(preview, fontSize = 14.sp, color = kb.label, maxLines = 1,
                     overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
             }
@@ -1151,8 +1209,9 @@ private fun OneHanded(side: Int, onSide: (Int) -> Unit, content: @Composable () 
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            IconPill(if (side > 0) "⇤" else "⇥", false) { onSide(-side) }
-            IconPill("⤢", false) { onSide(0) }
+            IconPill(if (side > 0) Icons.Outlined.KeyboardDoubleArrowLeft else Icons.Outlined.KeyboardDoubleArrowRight,
+                "Move keys", false) { onSide(-side) }
+            IconPill(Icons.Outlined.OpenInFull, "Full width", false) { onSide(0) }
         }
     }
     Row(Modifier.fillMaxWidth().background(kb.background), verticalAlignment = Alignment.CenterVertically) {
@@ -1216,9 +1275,9 @@ private fun CorrectionBar(correction: Pair<String, String>, onUndo: () -> Unit) 
 
 /** A compact tappable icon (smaller than a standard button). */
 @Composable
-private fun SmallIcon(icon: String, enabled: Boolean = true, onClick: () -> Unit) {
+private fun SmallIcon(icon: ImageVector, description: String, enabled: Boolean = true, onClick: () -> Unit) {
     Box(
         Modifier.size(30.dp).clip(RoundedCornerShape(15.dp)).clickable(enabled = enabled, onClick = onClick),
         contentAlignment = Alignment.Center,
-    ) { Text(icon, fontSize = 15.sp, color = MaterialTheme.colorScheme.primary) }
+    ) { Icon(icon, description, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary) }
 }

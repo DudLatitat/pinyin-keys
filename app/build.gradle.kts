@@ -16,7 +16,7 @@ android {
         targetSdk = 35
         // versionCode must go up for every install-over-update: CI uses its run number.
         versionCode = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 2
-        versionName = "1.10.0"
+        versionName = "1.11.0"
     }
 
     // Release signing. The keystore and passwords come from GitHub Actions secrets via
@@ -60,6 +60,9 @@ dependencies {
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.foundation:foundation")
     implementation("androidx.compose.material3:material3")
+    // Standard Material line icons for the keyboard's buttons (AndroidX, no tracking;
+    // unused icons are removed from release builds by R8).
+    implementation("androidx.compose.material:material-icons-extended")
     implementation("androidx.activity:activity-compose:1.9.3")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
     implementation("androidx.savedstate:savedstate-ktx:1.2.1")

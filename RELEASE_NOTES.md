@@ -3,6 +3,19 @@ A personal Android keyboard that shows Chinese and pinyin for the English you ty
 **Install:** download `pinyin-keys-<version>.apk` below, open it on the phone, then turn on
 Pinyin Keys in the system keyboard settings. Add your Claude API key in the Pinyin Keys app.
 
+## New in 1.11.0
+- Fixed: the Paste button now comes back after you copy something or take a screenshot
+  and the keyboard closes and reopens (switching apps); it's offered until you paste or
+  type (copies within the last minute, screenshots within two).
+- Chinese for the word you're typing: the suggestion bar shows e.g. 吃 chī while you type
+  "eat". Tap it to hear it, hold it to type the Chinese instead. Offline (CC-CEDICT).
+- Emoji suggestions: typing "pizza" offers 🍕 next to the suggestions; tap to add it.
+- Learned capitals: names you write with a capital in the middle of a sentence are
+  capitalised for you after twice.
+- Password fields: no emoji button.
+- The keyboard's buttons use clean line icons instead of emoji.
+- Under the hood: the keyboard's main file is split into smaller parts by feature.
+
 ## New in 1.10.0
 - Invisible key resizing: a tap near the edge between two keys becomes the letter that
   makes a far more likely word (after "th", a tap between E and R gives E). A tap near the

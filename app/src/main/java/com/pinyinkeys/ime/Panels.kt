@@ -1,6 +1,14 @@
 package com.pinyinkeys.ime
 
 import androidx.compose.foundation.background
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.Backspace
+import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.DeleteSweep
+import androidx.compose.material.icons.outlined.Keyboard
+import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material3.Icon
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -81,15 +89,15 @@ fun EmojiHeader(selected: Int, onSelect: (Int) -> Unit, onClose: () -> Unit, onB
         Modifier.fillMaxWidth().height(44.dp).background(kb.toolbar).padding(horizontal = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        HeaderIcon("⌨", onClick = onClose)
-        HeaderIcon("🔍", onClick = onSearch)
+        HeaderIcon(Icons.Outlined.Keyboard, "Keyboard", onClick = onClose)
+        HeaderIcon(Icons.Outlined.Search, "Search emoji", onClick = onSearch)
         Box(Modifier.padding(horizontal = 4.dp).size(width = 1.dp, height = 22.dp).background(kb.label.copy(alpha = 0.3f)))
         LazyRow(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
             itemsIndexed(EMOJI_TABS) { i, c ->
                 HeaderIcon(c.icon, active = i == selected) { onSelect(i) }
             }
         }
-        HeaderIcon("⌫", onClick = onBackspace)
+        HeaderIcon(Icons.AutoMirrored.Outlined.Backspace, "Delete", onClick = onBackspace)
     }
 }
 
@@ -110,7 +118,7 @@ fun EmojiSearchBar(query: String, onEmoji: (String) -> Unit, onClose: () -> Unit
         Modifier.fillMaxWidth().height(48.dp).background(kb.toolbar).padding(horizontal = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        HeaderIcon("✕", onClick = onClose)
+        HeaderIcon(Icons.Outlined.Close, "Close search", onClick = onClose)
         Text(
             if (query.isEmpty()) "Search emoji…" else query,
             fontSize = 15.sp, maxLines = 1,
@@ -175,7 +183,17 @@ private fun EmojiCell(e: String, onEmoji: (String) -> Unit) {
     ) { Text(e, fontSize = 30.sp) }
 }
 
-/** A round icon in a panel header; [active] draws a highlight behind it. */
+/** A round line-icon button in a panel header. */
+@Composable
+private fun HeaderIcon(icon: ImageVector, description: String, onClick: () -> Unit) {
+    val kb = LocalKb.current
+    Box(
+        Modifier.size(38.dp).clip(RoundedCornerShape(19.dp)).background(kb.toolbar).clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) { Icon(icon, description, Modifier.size(22.dp), tint = kb.label) }
+}
+
+/** A round icon in a panel header (emoji category tabs); [active] draws a highlight behind it. */
 @Composable
 private fun HeaderIcon(icon: String, active: Boolean = false, onClick: () -> Unit) {
     val kb = LocalKb.current
@@ -197,10 +215,10 @@ fun ClipboardHeader(onClose: () -> Unit, onClearHistory: () -> Unit) {
         Modifier.fillMaxWidth().height(44.dp).background(kb.toolbar).padding(horizontal = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        HeaderIcon("⌨", onClick = onClose)
+        HeaderIcon(Icons.Outlined.Keyboard, "Keyboard", onClick = onClose)
         Box(Modifier.padding(horizontal = 4.dp).size(width = 1.dp, height = 22.dp).background(kb.label.copy(alpha = 0.3f)))
         Text("Clipboard", fontSize = 17.sp, color = kb.label, modifier = Modifier.weight(1f).padding(start = 6.dp))
-        HeaderIcon("🗑", onClick = onClearHistory)
+        HeaderIcon(Icons.Outlined.DeleteSweep, "Clear history", onClick = onClearHistory)
     }
 }
 

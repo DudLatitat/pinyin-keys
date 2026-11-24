@@ -9,6 +9,21 @@ import android.content.Context
 class EmojiSearch private constructor(private val entries: List<Entry>) {
     private class Entry(val emoji: String, val nameWords: List<String>, val tags: List<String>)
 
+    // Word -> the first (most common) emoji named or tagged with it, for suggestions.
+    private val byWord: Map<String, String> by lazy {
+        val m = HashMap<String, String>()
+        for (e in entries) for (w in e.nameWords + e.tags) {
+            if (w.length >= 3 && w !in NOT_HINTS && w.all { it.isLetter() }) m.putIfAbsent(w, e.emoji)
+        }
+        m
+    }
+
+    /** An emoji for a typed word ("love" -> 😍), or null. */
+    fun forWord(word: String): String? {
+        val w = word.lowercase()
+        return byWord[w] ?: if (w.length > 4 && w.endsWith("s")) byWord[w.dropLast(1)] else null
+    }
+
     /** Emoji matching every word of [query] (as a word start), best first. */
     fun search(query: String, limit: Int = 40): List<String> {
         val words = query.lowercase().split(' ').filter { it.isNotEmpty() }
@@ -30,6 +45,15 @@ class EmojiSearch private constructor(private val entries: List<Entry>) {
     }
 
     companion object {
+        /** Words in emoji names too general to suggest an emoji for. */
+        private val NOT_HINTS = setOf(
+            "face", "with", "and", "the", "person", "man", "woman", "people", "sign", "symbol", "mark",
+            "button", "flag", "hand", "light", "medium", "dark", "skin", "tone", "open", "small", "large",
+            "white", "black", "red", "blue", "green", "yellow", "orange", "purple", "brown", "grey", "gray",
+            "square", "circle", "arrow", "left", "right", "down", "for", "you", "not", "new", "old", "top",
+            "back", "end", "off", "free", "one", "two", "three", "four", "five", "six", "seven", "eight",
+            "nine", "ten", "time", "line", "letter", "first", "high", "low",
+        )
         @Volatile var loaded: EmojiSearch? = null
             private set
 

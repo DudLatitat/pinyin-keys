@@ -47,60 +47,60 @@ import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 class PinyinKeysService : InputMethodService(),
     LifecycleOwner, SavedStateRegistryOwner, ViewModelStoreOwner {
 
-    private val lifecycleRegistry = LifecycleRegistry(this)
-    private val savedStateController = SavedStateRegistryController.create(this)
-    private val store = ViewModelStore()
+    internal val lifecycleRegistry = LifecycleRegistry(this)
+    internal val savedStateController = SavedStateRegistryController.create(this)
+    internal val store = ViewModelStore()
 
     override val lifecycle: Lifecycle get() = lifecycleRegistry
     override val savedStateRegistry: SavedStateRegistry get() = savedStateController.savedStateRegistry
     override val viewModelStore: ViewModelStore get() = store
 
     /** True in password / "incognito" fields. Later milestones hide all translation UI then. */
-    private val sensitiveField = mutableStateOf(false)
+    internal val sensitiveField = mutableStateOf(false)
 
     /** Number pad layout for number/phone/date fields, or null for the normal keyboard. */
-    private val numberPad = mutableStateOf<NumberPadKind?>(null)
+    internal val numberPad = mutableStateOf<NumberPadKind?>(null)
     /** Label for the enter key, from what the app asks for (Done, Next, Go, Send...). */
-    private val enterLabel = mutableStateOf<String?>(null)
+    internal val enterLabel = mutableStateOf<String?>(null)
     /** Polite tone for translations (toolbar 随/敬). */
-    private val tone = mutableStateOf(com.pinyinkeys.ime.translate.Tone.Casual)
-    private val theme = mutableStateOf("System")
-    private val numberRow = mutableStateOf(true)
-    private val keyScale = mutableStateOf(1f)
-    private val toneColors = mutableStateOf(true)
-    private val feedback = mutableStateOf(KeyFeedback())
+    internal val tone = mutableStateOf(com.pinyinkeys.ime.translate.Tone.Casual)
+    internal val theme = mutableStateOf("System")
+    internal val numberRow = mutableStateOf(true)
+    internal val keyScale = mutableStateOf(1f)
+    internal val toneColors = mutableStateOf(true)
+    internal val feedback = mutableStateOf(KeyFeedback())
 
     /** What the Assist panel shows. Compose redraws whenever this changes. */
-    private val assistState = mutableStateOf<AssistState>(AssistState.Idle)
-    private var translateJob: Job? = null
-    private val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    internal val assistState = mutableStateOf<AssistState>(AssistState.Idle)
+    internal var translateJob: Job? = null
+    internal val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
 
-    private val mode = mutableStateOf(Mode.Assist)
+    internal val mode = mutableStateOf(Mode.Assist)
 
     // Typing state.
-    private val shift = mutableStateOf(Shift.Off)
+    internal val shift = mutableStateOf(Shift.Off)
     /** Chinese mode: letters build pinyin, and the candidate bar suggests characters. */
-    private val chinese = mutableStateOf(false)
-    private val composing = mutableStateOf("")
-    private val candidates = mutableStateOf<List<Candidate>>(emptyList())
-    private var dictionary: PinyinDictionary? = null
+    internal val chinese = mutableStateOf(false)
+    internal val composing = mutableStateOf("")
+    internal val candidates = mutableStateOf<List<Candidate>>(emptyList())
+    internal var dictionary: PinyinDictionary? = null
 
-    private val recentEmoji = mutableStateOf<List<String>>(emptyList())
-    private val pinnedClips = mutableStateOf<List<String>>(emptyList())
+    internal val recentEmoji = mutableStateOf<List<String>>(emptyList())
+    internal val pinnedClips = mutableStateOf<List<String>>(emptyList())
     /** Things pasted with this keyboard, newest first (only text the user chose to paste). */
-    private val clipHistory = mutableStateOf<List<String>>(emptyList())
-    private val showPasteChip = mutableStateOf(false)
+    internal val clipHistory = mutableStateOf<List<String>>(emptyList())
+    internal val showPasteChip = mutableStateOf(false)
 
     // --- Undo / redo (see Undo.kt) ---
-    private val undoHistory = UndoHistory()
-    private val canUndo = mutableStateOf(false)
+    internal val undoHistory = UndoHistory()
+    internal val canUndo = mutableStateOf(false)
     /** A terminal app (see isTerminal): plain keyboard, but the clipboard is allowed. */
-    private val terminalField = mutableStateOf(false)
+    internal val terminalField = mutableStateOf(false)
     /** No clipboard in password fields (terminals excepted). */
-    private val clipBlocked get() = sensitiveField.value && !terminalField.value
-    private var hasSelection = false
-    private var rawConnection: android.view.inputmethod.InputConnection? = null
-    private var recording: RecordingConnection? = null
+    internal val clipBlocked get() = sensitiveField.value && !terminalField.value
+    internal var hasSelection = false
+    internal var rawConnection: android.view.inputmethod.InputConnection? = null
+    internal var recording: RecordingConnection? = null
 
     /**
      * Every edit goes through this connection to the app. We hand out a wrapper that
@@ -116,7 +116,7 @@ class PinyinKeysService : InputMethodService(),
         return recording
     }
 
-    private fun undoRedo(redo: Boolean) {
+    internal fun undoRedo(redo: Boolean) {
         if (composing.value.isNotEmpty()) { setComposing(""); return }
         val ic = rawConnection ?: return
         markOwnEdit()
@@ -128,17 +128,17 @@ class PinyinKeysService : InputMethodService(),
     }
 
     // --- Glide typing (see Glide.kt) ---
-    private val glide = GlideState()
+    internal val glide = GlideState()
     /** The word just entered by gliding (tap a suggestion to swap it; ⌫ removes it). */
-    private var glided: String? = null
-    private var glideAlternatives: List<String> = emptyList()
-    private val glideOn = mutableStateOf(true)
-    private val oneHanded = mutableStateOf(0)
+    internal var glided: String? = null
+    internal var glideAlternatives: List<String> = emptyList()
+    internal val glideOn = mutableStateOf(true)
+    internal val oneHanded = mutableStateOf(0)
 
-    private var shiftAtLastLetter = Shift.Off
+    internal var shiftAtLastLetter = Shift.Off
 
     /** A glide began on a letter key, which typed its letter on touch-down: take it back. */
-    private fun glideStarted() {
+    internal fun glideStarted() {
         val ic = currentInputConnection ?: return
         markOwnEdit()
         shift.value = shiftAtLastLetter  // typing that letter may have turned shift off
@@ -147,7 +147,7 @@ class PinyinKeysService : InputMethodService(),
         if (wordTouches.isNotEmpty()) wordTouches.removeAt(wordTouches.lastIndex)
     }
 
-    private fun glideEnded(path: List<androidx.compose.ui.geometry.Offset>, keys: Map<Char, androidx.compose.ui.geometry.Rect>) {
+    internal fun glideEnded(path: List<androidx.compose.ui.geometry.Offset>, keys: Map<Char, androidx.compose.ui.geometry.Rect>) {
         val dict = english ?: return
         val boost = nextWords?.boosts(sentence.toList()) ?: emptyMap()
         lifecycleScope.launch {
@@ -157,13 +157,13 @@ class PinyinKeysService : InputMethodService(),
         }
     }
 
-    private fun glideCase(w: String) = when (shift.value) {
+    internal fun glideCase(w: String) = when (shift.value) {
         Shift.Lock -> w.uppercase()
         Shift.On -> w.replaceFirstChar { it.uppercase() }
         Shift.Off -> w
     }
 
-    private fun commitGlide(words: List<String>) {
+    internal fun commitGlide(words: List<String>) {
         val ic = currentInputConnection ?: return
         clearAssist()
         showPasteChip.value = false
@@ -187,72 +187,72 @@ class PinyinKeysService : InputMethodService(),
     }
 
     /** Hold space: the system's keyboard picker. */
-    private fun spaceHeld() {
+    internal fun spaceHeld() {
         undoSpace()
         (getSystemService(INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager).showInputMethodPicker()
     }
 
-    private fun setOneHanded(side: Int) {
+    internal fun setOneHanded(side: Int) {
         oneHanded.value = side
         lifecycleScope.launch(Dispatchers.IO) { Settings(this@PinyinKeysService).oneHanded = side }
     }
 
     // --- English suggestions / autocorrect ---
-    private var english: EnglishDictionary? = null
-    private var nextWords: NextWords? = null
+    internal var english: EnglishDictionary? = null
+    internal var nextWords: NextWords? = null
     /** The word being typed (tracked here, so we don't ask the app on every key). */
-    private var currentWord = ""
+    internal var currentWord = ""
     /** Where each letter of [currentWord] was tapped (for touch-aware autocorrect). */
-    private val wordTouches = ArrayList<Touch?>()
+    internal val wordTouches = ArrayList<Touch?>()
 
     /** Tap positions for the current word, or empty if they're out of step with it. */
-    private fun touchesForWord(): List<Touch?> =
+    internal fun touchesForWord(): List<Touch?> =
         if (wordTouches.size == currentWord.length) wordTouches.toList() else emptyList()
     /** The last few finished words of this sentence, for next-word suggestions and learning. */
-    private val sentence = ArrayList<String>()
+    internal val sentence = ArrayList<String>()
 
-    private fun addToSentence(word: String) {
+    internal fun addToSentence(word: String) {
         sentence += word
         if (sentence.size > 2) sentence.removeAt(0)  // only the last two matter
     }
     /** Set right after an autocorrect, so an immediate backspace can undo it. */
-    private var lastAutocorrect: Pair<String, String>? = null
-    private val suggestions = mutableStateOf<List<String>>(emptyList())
+    internal var lastAutocorrect: Pair<String, String>? = null
+    internal val suggestions = mutableStateOf<List<String>>(emptyList())
     /** User tapped ‹ to see the tools instead of suggestions; cleared on the next letter. */
-    private val toolsForced = mutableStateOf(false)
+    internal val toolsForced = mutableStateOf(false)
     /** Shown briefly in the bar after an autocorrect: (what you typed, what it became). */
-    private val correctionNotice = mutableStateOf<Pair<String, String>?>(null)
-    private val hideCorrection = Runnable { correctionNotice.value = null }
+    internal val correctionNotice = mutableStateOf<Pair<String, String>?>(null)
+    internal val hideCorrection = Runnable { correctionNotice.value = null }
 
-    private var speech: Speech? = null
+    internal var speech: Speech? = null
 
     // --- "Type it yourself": after translating, tap 中 to type the Chinese in pinyin ---
     /** The translated sentences you're typing, or null when not in this mode. */
-    private var guidedTarget: List<String>? = null
+    internal var guidedTarget: List<String>? = null
     /** How many sentences you've typed correctly so far (cards show ✓). */
-    private val guidedDone = mutableStateOf(0)
+    internal val guidedDone = mutableStateOf(0)
     /** The part of the translation still to type (Chinese characters only). */
-    private var guidedRemaining = ""
+    internal var guidedRemaining = ""
     /** A new screenshot waiting to be offered; it's only copied if Paste is tapped. */
-    private var pendingScreenshot: android.net.Uri? = null
-    private var offeredScreenshot: android.net.Uri? = null
+    internal var pendingScreenshot: android.net.Uri? = null
+    internal var offeredScreenshot: android.net.Uri? = null
     /** Notices new photos while the keyboard is open (only if screenshots are enabled). */
-    private val mediaObserver = object : android.database.ContentObserver(android.os.Handler(android.os.Looper.getMainLooper())) {
+    internal val mediaObserver = object : android.database.ContentObserver(android.os.Handler(android.os.Looper.getMainLooper())) {
         override fun onChange(selfChange: Boolean) = checkRecentScreenshot()
     }
-    private var mediaObserverOn = false
+    internal var mediaObserverOn = false
     /** The newest copy, offered by the Paste button. */
-    private var latestClip: String? = null
-    private var lastSeenClipTime = 0L
-    private val clipListener = android.content.ClipboardManager.OnPrimaryClipChangedListener { onClipChanged() }
-    private val practiceState = mutableStateOf<PracticeState>(PracticeState.Idle)
-    private var strictTones = false
+    internal var latestClip: String? = null
+    internal var lastSeenClipTime = 0L
+    internal val clipListener = android.content.ClipboardManager.OnPrimaryClipChangedListener { onClipChanged() }
+    internal val practiceState = mutableStateOf<PracticeState>(PracticeState.Idle)
+    internal var strictTones = false
 
     /** Per-card breakdown and "Why?"; state maps so Compose redraws each card on change. */
-    private val detailsStates = mutableStateMapOf<Sentence, Load<SentenceDetails>>()
-    private val whyStates = mutableStateMapOf<Sentence, Load<String>>()
+    internal val detailsStates = mutableStateMapOf<Sentence, Load<SentenceDetails>>()
+    internal val whyStates = mutableStateMapOf<Sentence, Load<String>>()
     /** Sentences saved (or being saved) during this translation, so the star fills in. */
-    private val savedStates = mutableStateMapOf<Sentence, Load<Unit>>()
+    internal val savedStates = mutableStateMapOf<Sentence, Load<Unit>>()
 
     override fun onCreate() {
         super.onCreate()
@@ -292,36 +292,36 @@ class PinyinKeysService : InputMethodService(),
                     clipboardAllowed = !clipBlocked,
                     assist = assistState.value,
                     mode = mode.value,
-                    onMode = ::setMode,
+                    onMode = this::setMode,
                     practice = practiceState.value,
-                    onStartPractice = ::startPractice,
-                    onHint = ::showHint,
-                    onTranslate = ::translateField,
-                    onInsertChinese = ::insertChinese,
+                    onStartPractice = this::startPractice,
+                    onHint = this::showHint,
+                    onTranslate = this::translateField,
+                    onInsertChinese = this::insertChinese,
                     detailsStates = detailsStates,
-                    onExpand = ::loadDetails,
+                    onExpand = this::loadDetails,
                     whyStates = whyStates,
-                    onWhy = ::explain,
+                    onWhy = this::explain,
                     savedStates = savedStates,
-                    onSave = ::saveSentence,
+                    onSave = this::saveSentence,
                     onText = ::typeText,
                     onBackspace = ::backspace,
-                    onEnter = ::enter,
+                    onEnter = this::enter,
                     onSwitchKeyboard = { switchToPreviousInputMethod() },
                     shift = shift.value,
-                    onShift = ::cycleShift,
+                    onShift = this::cycleShift,
                     // Never Chinese/suggestions in password fields: plain keyboard only.
                     chinese = chinese.value && !sensitiveField.value,
-                    onToggleChinese = ::toggleChinese,
+                    onToggleChinese = this::toggleChinese,
                     composing = composing.value,
                     candidates = candidates.value,
-                    onCandidate = ::pickCandidate,
+                    onCandidate = this::pickCandidate,
                     recentEmoji = recentEmoji.value,
-                    onEmoji = ::typeEmoji,
-                    readClipboard = ::readClipboard,
+                    onEmoji = this::typeEmoji,
+                    readClipboard = this::readClipboard,
                     pinnedClips = pinnedClips.value,
                     clipHistory = clipHistory.value,
-                    onPaste = ::pasteEntry,
+                    onPaste = this::pasteEntry,
                     onPin = { t -> updatePinned(listOf(t) + pinnedClips.value) },
                     onUnpin = { t -> updatePinned(pinnedClips.value - t) },
                     onDeleteClip = { t -> updateHistory(clipHistory.value - t) },
@@ -329,6 +329,9 @@ class PinyinKeysService : InputMethodService(),
                     showPasteChip = showPasteChip.value,
                     pastePreview = pastePreview(),
                     suggestions = suggestions.value,
+                    wordHint = wordHint.value?.takeIf { it.first === suggestions.value }?.second,
+                    onHintEmoji = ::pickHintEmoji,
+                    onHintChinese = ::replaceWordWithChinese,
                     onSuggestion = ::pickSuggestion,
                     onForgetSuggestion = ::forgetWord,
                     toolsForced = toolsForced.value,
@@ -337,21 +340,21 @@ class PinyinKeysService : InputMethodService(),
                     onUndoCorrection = ::undoAutocorrect,
                     onSpeak = ::speak,
                     guidedDone = guidedDone.value,
-                    onPasteChip = ::pasteFromChip,
-                    onEdit = ::edit,
-                    onOpenSettings = ::openSettings,
+                    onPasteChip = this::pasteFromChip,
+                    onEdit = this::edit,
+                    onOpenSettings = this::openSettings,
                     numberPad = numberPad.value,
                     enterLabel = enterLabel.value,
-                    onCursorMove = ::moveCursor,
-                    onReplaceLast = ::replaceLastChar,
-                    onUndoSpace = ::undoSpace,
+                    onCursorMove = this::moveCursor,
+                    onReplaceLast = this::replaceLastChar,
+                    onUndoSpace = this::undoSpace,
                     showNumberRow = numberRow.value,
                     keyScale = keyScale.value,
                     toneColors = toneColors.value,
                     feedback = feedback.value,
                     tone = tone.value,
-                    onTogglePolite = ::togglePolite,
-                    onExplain = ::explainCopied,
+                    onTogglePolite = this::togglePolite,
+                    onExplain = this::explainCopied,
                     theme = theme.value,
                     glide = if (glideOn.value) glide else null,
                     canUndo = canUndo.value,
@@ -423,13 +426,13 @@ class PinyinKeysService : InputMethodService(),
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_PAUSE)
     }
 
-    private fun speak(text: String) {
+    internal fun speak(text: String) {
         val s = speech ?: Speech(this).also { speech = it }
         if (!s.speak(text)) toast("No Chinese voice installed. Add one in Android's text-to-speech settings.")
     }
 
     /** Saves learned word pairs and touch habits (on the phone, encrypted). */
-    private fun saveLearning() {
+    internal fun saveLearning() {
         wordsSinceSave = 0
         nextWords?.let { nw -> lifecycleScope.launch(Dispatchers.IO) { nw.save() } }
         if (touchBiasDirty) {
@@ -441,7 +444,7 @@ class PinyinKeysService : InputMethodService(),
 
     // Android can stop the keyboard's process at any time, so also save every 30 words
     // instead of only when the keyboard is hidden.
-    private var wordsSinceSave = 0
+    internal var wordsSinceSave = 0
 
     override fun onDestroy() {
         speech?.shutdown()
@@ -457,7 +460,7 @@ class PinyinKeysService : InputMethodService(),
      * Any edit makes the shown translation stale (Insert Chinese would insert the wrong
      * text), so typing clears it. Also cancels a translation still in progress.
      */
-    private fun clearAssist() {
+    internal fun clearAssist() {
         endGuided()
         if (assistState.value == AssistState.Idle) return
         translateJob?.cancel()
@@ -466,18 +469,18 @@ class PinyinKeysService : InputMethodService(),
     }
 
     /** True while held backspace should keep sending Delete key presses (see backspace()). */
-    private var deleteWithKeyEvent = false
+    internal var deleteWithKeyEvent = false
 
     /**
      * Terminal-style fields (input type "none", e.g. SSH apps) take key presses, not text.
      * There we send each character as a key press and never read anything back.
      */
-    private val rawKeyField: Boolean
+    internal val rawKeyField: Boolean
         get() = currentInputEditorInfo?.inputType == InputType.TYPE_NULL
 
-    private val keyMap by lazy { android.view.KeyCharacterMap.load(android.view.KeyCharacterMap.VIRTUAL_KEYBOARD) }
+    internal val keyMap by lazy { android.view.KeyCharacterMap.load(android.view.KeyCharacterMap.VIRTUAL_KEYBOARD) }
 
-    private fun sendRaw(text: String) {
+    internal fun sendRaw(text: String) {
         val ic = currentInputConnection ?: return
         // The phone's built-in key map turns characters into key presses (with shift where
         // needed); characters it can't (e.g. emoji) are sent as plain text.
@@ -486,7 +489,7 @@ class PinyinKeysService : InputMethodService(),
         if (shift.value == Shift.On) shift.value = Shift.Off
     }
 
-    private fun typeText(text: String) {
+    internal fun typeText(text: String) {
         showPasteChip.value = false
         if (rawKeyField) { sendRaw(text); return }
         if (practiceTyped(text)) return
@@ -601,13 +604,13 @@ class PinyinKeysService : InputMethodService(),
      * Turns on a capital for the next letter if [before] (the text just before the cursor)
      * ends a sentence ("Hi. ") or is the start of the text; otherwise off. Caps lock stays.
      */
-    private fun capsAfter(before: String) {
+    internal fun capsAfter(before: String) {
         if (shift.value == Shift.Lock || chinese.value || !capsField) return
         val t = before.trimEnd(' ')
         shift.value = if (t.isEmpty() || t.last() in ".?!\n") Shift.On else Shift.Off
     }
 
-    private fun backspace() {
+    internal fun backspace() {
         val p = practiceState.value
         if (mode.value == Mode.Practice && p is PracticeState.Active && !p.done) {
             // Only edits the pinyin being typed; committed characters stay put.
@@ -676,14 +679,14 @@ class PinyinKeysService : InputMethodService(),
         if (currentWord.isEmpty()) recoverWord()
     }
 
-    private var lastBackspaceAt = 0L
-    private var backspaceHoldStart = 0L
+    internal var lastBackspaceAt = 0L
+    internal var backspaceHoldStart = 0L
 
     /**
      * Puts back what was typed before the last autocorrect (backspace right after it, or
      * tapping the "teh → the" notice), and stops correcting that word. True if undone.
      */
-    private fun undoAutocorrect(): Boolean {
+    internal fun undoAutocorrect(): Boolean {
         val (original, corrected) = lastAutocorrect ?: correctionNotice.value ?: return false
         lastAutocorrect = null
         correctionNotice.value = null
@@ -706,7 +709,7 @@ class PinyinKeysService : InputMethodService(),
     // --- Suggestions and autocorrect (English) ---
 
     /** No suggestions, autocorrect or learning in passwords, emails, web addresses or numbers. */
-    private fun suggestionsAllowed(): Boolean {
+    internal fun suggestionsAllowed(): Boolean {
         if (sensitiveField.value || chinese.value) return false
         val type = currentInputEditorInfo?.inputType ?: return false
         if (type and InputType.TYPE_MASK_CLASS != InputType.TYPE_CLASS_TEXT) return false
@@ -715,13 +718,13 @@ class PinyinKeysService : InputMethodService(),
             v != InputType.TYPE_TEXT_VARIATION_WEB_EMAIL_ADDRESS
     }
 
-    private var suggestJob: Job? = null
+    internal var suggestJob: Job? = null
 
     /**
      * Works out suggestions for the current word on a background thread, so typing never
      * waits for it; a newer keystroke cancels an older, unfinished lookup.
      */
-    private fun updateSuggestions() {
+    internal fun updateSuggestions() {
         suggestJob?.cancel()
         val dict = english
         val word = currentWord
@@ -746,28 +749,61 @@ class PinyinKeysService : InputMethodService(),
                     listOfNotNull(rest.getOrNull(0), LITERAL + word, rest.getOrNull(1))
                 } else s
             }
-            if (currentWord == word) suggestions.value = list
+            // Chinese and an emoji for the word you mean (the middle suggestion).
+            val target = (list.firstOrNull() ?: word).removePrefix(AUTO).removePrefix(LITERAL)
+            val hint = withContext(Dispatchers.Default) {
+                val zh = enZh?.lookup(target)
+                val emoji = EmojiSearch.loaded?.forWord(target)
+                if (zh == null && emoji == null) null else WordHint(zh?.first, zh?.second, emoji)
+            }
+            if (currentWord == word) {
+                suggestions.value = list
+                // Tied to this exact list: it disappears as soon as the suggestions change.
+                wordHint.value = hint?.let { list to it }
+            }
         }
     }
 
+    /** English -> Chinese words for the suggestion bar (see EnZh.kt). */
+    @Volatile internal var enZh: EnZh? = null
+    /** The hint for the current suggestions (shown only while those suggestions are). */
+    internal val wordHint = mutableStateOf<Pair<List<String>, WordHint>?>(null)
+
+    /** Emoji chip tapped: finish the word, then add the emoji after it. */
+    internal fun pickHintEmoji(e: String) {
+        typeText(" ")
+        typeEmoji(e)
+    }
+
+    /** Chinese chip held: type the Chinese instead of the English word. */
+    internal fun replaceWordWithChinese(hanzi: String) {
+        val ic = currentInputConnection ?: return
+        if (currentWord.isEmpty()) return
+        markOwnEdit()
+        ic.deleteSurroundingText(currentWord.length, 0)
+        ic.commitText(hanzi, 1)
+        currentWord = ""; wordTouches.clear()
+        suggestions.value = emptyList()
+    }
+
     /** Word-sequence model (see NgramModel.kt); null until loaded or if it can't be read. */
-    @Volatile private var ngrams: NgramModel? = null
+    @Volatile internal var ngrams: NgramModel? = null
 
     /** "How well does this word fit after the last two words?" for autocorrect, or null. */
-    private fun contextModel(): ((String) -> Double)? {
+    internal fun contextModel(): ((String) -> Double)? {
         val m = ngrams ?: return null
         val before = sentence.toList()
         return { w -> m.contextBoost(w, before) }
     }
 
-    private var loadedLearnVersion = -1
-    private var learningLoading = false
+    internal var loadedLearnVersion = -1
+    internal var learningLoading = false
 
     /**
      * Loads the dictionaries and everything learned from you, in the background. Runs at
      * start-up, and again when the app's "learned" screen changed something.
      */
-    private fun loadLearning() {
+    internal fun loadLearning() {
         if (learningLoading) return
         learningLoading = true
         lifecycleScope.launch {
@@ -790,6 +826,9 @@ class PinyinKeysService : InputMethodService(),
                 fixBook = fixes; pickBook = picks
                 dict.learnedFixes = fixes.active()
                 dict.preferred = picks.active()
+                capCounts.clear()
+                st.capCounts.forEach { l -> l.split('\t').takeIf { it.size == 2 }?.let { capCounts[it[0]] = it[1].toIntOrNull() ?: 0 } }
+                dict.capWords = capCounts.filterValues { it >= CAP_AFTER }.keys
                 dict.touchBias = st.touchBias.mapNotNull { l ->
                     val p = l.split('\t')
                     if (p.size == 3 && p[0].length == 1) p[0][0] to Touch(p[1].toFloat(), p[2].toFloat()) else null
@@ -798,6 +837,8 @@ class PinyinKeysService : InputMethodService(),
                 if (nextWords == null) nw.load() else nw.loadLearned()
                 english = dict
                 ngrams = NgramModel.get(this@PinyinKeysService)
+                enZh = runCatching { EnZh.get(this@PinyinKeysService) }.getOrNull()
+                runCatching { EmojiSearch.get(this@PinyinKeysService) }
                 nextWords = nw
                 loadedLearnVersion = version
             }
@@ -809,7 +850,7 @@ class PinyinKeysService : InputMethodService(),
      * 1. Personal touch model: after a word you didn't correct, nudge each letter's average
      * tap offset towards where you actually tapped it (a slow moving average).
      */
-    private fun learnTouches(word: String, touches: List<Touch?>) {
+    internal fun learnTouches(word: String, touches: List<Touch?>) {
         val dict = english ?: return
         if (touches.size != word.length) return
         val bias = dict.touchBias.toMutableMap()
@@ -821,10 +862,10 @@ class PinyinKeysService : InputMethodService(),
         dict.touchBias = bias
         touchBiasDirty = true
     }
-    private var touchBiasDirty = false
+    internal var touchBiasDirty = false
 
     /** Remember (or with null, forget) that you prefer [picked] when you type [typed]. */
-    private fun setPreferred(typed: String, picked: String?) {
+    internal fun setPreferred(typed: String, picked: String?) {
         val d = english ?: return
         if (picked == null) { pickBook.remove(typed); saveFixes(); return }
         if (!d.isPlausibleFix(typed, picked)) return
@@ -833,10 +874,10 @@ class PinyinKeysService : InputMethodService(),
     }
 
     /** Words in the current message that aren't in the dictionary and weren't corrected. */
-    private val messageNewWords = LinkedHashSet<String>()
+    internal val messageNewWords = LinkedHashSet<String>()
 
     /** 9. Long-press a suggestion: forget everything learned about that word. */
-    private fun forgetWord(word: String) {
+    internal fun forgetWord(word: String) {
         val w = word.removePrefix(LITERAL).removePrefix(AUTO).lowercase()
         english?.let { d -> d.userWords = d.userWords - w }
         fixBook.forget(w); pickBook.forget(w)
@@ -855,7 +896,7 @@ class PinyinKeysService : InputMethodService(),
     }
 
     /** Next-word guesses, with one of your frequent two-word phrases in the third slot. */
-    private fun predictions(): List<String> {
+    internal fun predictions(): List<String> {
         val nw = nextWords ?: return emptyList()
         val words = nw.predict(sentence)
         val phrase = nw.phrase(sentence) ?: return words
@@ -863,7 +904,7 @@ class PinyinKeysService : InputMethodService(),
     }
 
     /** Remember that you fix the typo [typo] to [fix]. Kept encrypted on the phone. */
-    private fun learnFix(typo: String, fix: String) {
+    internal fun learnFix(typo: String, fix: String) {
         val dict = english ?: return
         // Only believable slips are learned, and only once you've made the same fix twice
         // (see LearnedFixes); fixes autocorrect already makes aren't stored at all.
@@ -873,11 +914,11 @@ class PinyinKeysService : InputMethodService(),
     }
 
     // Learned fixes and picks (see LearnedFixes.kt); loaded in loadLearning().
-    @Volatile private var fixBook = LearnedFixes()
-    @Volatile private var pickBook = LearnedFixes()
+    @Volatile internal var fixBook = LearnedFixes()
+    @Volatile internal var pickBook = LearnedFixes()
 
     /** Pushes the books to autocorrect and saves them (encrypted, on the phone). */
-    private fun saveFixes() {
+    internal fun saveFixes() {
         english?.let { d -> d.learnedFixes = fixBook.active(); d.preferred = pickBook.active() }
         val fixes = fixBook.lines()
         val picks = pickBook.lines()
@@ -889,7 +930,7 @@ class PinyinKeysService : InputMethodService(),
     }
 
     /** Remember [word] as a real word: suggested, and never autocorrected. */
-    private fun keepWord(word: String) {
+    internal fun keepWord(word: String) {
         val dict = english ?: return
         val lower = word.lowercase()
         if (lower in dict.userWords) return
@@ -898,7 +939,7 @@ class PinyinKeysService : InputMethodService(),
         lifecycleScope.launch(Dispatchers.IO) { Settings(this@PinyinKeysService).userWords = all }
     }
 
-    private fun resetWord() {
+    internal fun resetWord() {
         currentWord = ""
         sentence.clear()
         lastAutocorrect = null
@@ -910,7 +951,7 @@ class PinyinKeysService : InputMethodService(),
      * The current word is finished (space or punctuation). With [autocorrectOnly] and
      * autocorrect on, replace an obvious typo; then remember the word for predictions.
      */
-    private fun finishWord(ic: android.view.inputmethod.InputConnection, autocorrectOnly: Boolean) {
+    internal fun finishWord(ic: android.view.inputmethod.InputConnection, autocorrectOnly: Boolean) {
         val word = currentWord
         val touches = touchesForWord()
         wordTouches.clear()
@@ -969,6 +1010,7 @@ class PinyinKeysService : InputMethodService(),
         }
         if (++wordsSinceSave >= 30) saveLearning()
         if (' ' in final) return
+        learnCapital(final, startOfSentence = sentence.size <= 1)
         // A word you've typed a few times that isn't in the dictionary (slang, names) is
         // yours: stop "correcting" it. (3 times, so a habitual typo isn't locked in.)
         if (english?.isWord(final) == false && (nextWords?.count(final) ?: 0) >= 3) keepWord(final)
@@ -978,28 +1020,53 @@ class PinyinKeysService : InputMethodService(),
         }
     }
 
+    // Learned capitals: how often each word was written capitalised mid-sentence.
+    internal val capCounts = HashMap<String, Int>()
+
+    /**
+     * Names and other words you capitalise in the middle of a sentence ("I met Lin"):
+     * after [CAP_AFTER] times they're capitalised for you. Writing it in lowercase
+     * mid-sentence (and leaving it) counts against it.
+     */
+    internal fun learnCapital(word: String, startOfSentence: Boolean) {
+        val dict = english ?: return
+        if (startOfSentence || word.length < 2 || !word.all { it.isLetter() || it == '\'' }) return
+        val lower = word.lowercase()
+        if (lower == "i" || lower.startsWith("i'")) return
+        val capitalised = word[0].isUpperCase() && word.drop(1) == word.drop(1).lowercase()
+        if (!capitalised && word != lower) return  // ALL CAPS etc.: no signal
+        val before = capCounts[lower] ?: 0
+        val now = if (capitalised) before + 1 else maxOf(0, before - 2)
+        if (now == before) return
+        if (now == 0) capCounts.remove(lower) else capCounts[lower] = now
+        if (capCounts.size > 2000) capCounts.entries.sortedBy { it.value }.take(200).forEach { capCounts.remove(it.key) }
+        dict.capWords = capCounts.filterValues { it >= CAP_AFTER }.keys
+        val lines = capCounts.map { "${it.key}\t${it.value}" }
+        lifecycleScope.launch(Dispatchers.IO) { Settings(this@PinyinKeysService).capCounts = lines }
+    }
+
     /** The last finished word, if it wasn't a word and was left as typed. */
-    private var prevNonWord: String? = null
+    internal var prevNonWord: String? = null
 
     /** Does this text box want automatic capitals? (decided once per box) */
-    private val capsField: Boolean
+    internal val capsField: Boolean
         get() = (currentInputEditorInfo?.inputType ?: 0) and InputType.TYPE_TEXT_FLAG_CAP_SENTENCES != 0
 
     /** True right after a picked suggestion added a space (see smart punctuation). */
-    private var autoSpaced = false
+    internal var autoSpaced = false
 
     /** The word you started erasing with backspace, and the one fully erased (see learning). */
-    private var eraseStart: String? = null
-    private var erasedWord: String? = null
+    internal var eraseStart: String? = null
+    internal var erasedWord: String? = null
 
     /** Number of single-letter edits between two words (small words only). */
-    private fun editDistance(a: String, b: String) = TextUtil.editDistance(a, b)
+    internal fun editDistance(a: String, b: String) = TextUtil.editDistance(a, b)
 
     /** When this keyboard last changed the text in a way that moves the cursor a lot. */
-    private var lastOwnEditAt = 0L
-    private fun markOwnEdit() { lastOwnEditAt = android.os.SystemClock.uptimeMillis() }
+    internal var lastOwnEditAt = 0L
+    internal fun markOwnEdit() { lastOwnEditAt = android.os.SystemClock.uptimeMillis() }
 
-    private fun pickSuggestion(pickedRaw: String) {
+    internal fun pickSuggestion(pickedRaw: String) {
         val picked = pickedRaw.removePrefix(AUTO)
         val ic = currentInputConnection ?: return
         markOwnEdit()
@@ -1073,7 +1140,7 @@ class PinyinKeysService : InputMethodService(),
      * autocorrect continue on it. Reads a little text before the cursor; called only after
      * your own backspace or cursor move.
      */
-    private fun recoverWord() {
+    internal fun recoverWord() {
         if (!suggestionsAllowed() || chinese.value) return
         val ic = currentInputConnection ?: return
         val after = ic.getTextAfterCursor(1, 0)?.toString() ?: ""
@@ -1091,493 +1158,64 @@ class PinyinKeysService : InputMethodService(),
     }
 
     /** Short preview for the Paste button: start of the text, or "Image". */
-    private fun pastePreview(): String? = when {
-        pendingScreenshot != null -> "📷 Screenshot"
+    internal fun pastePreview(): String? = when {
+        pendingScreenshot != null -> "Screenshot"
         latestClip == null -> null
-        Clips.isImage(latestClip!!) -> "🖼 Image"
+        Clips.isImage(latestClip!!) -> "Image"
         else -> latestClip!!.replace('\n', ' ').take(28)
     }
-    private var pendingCapsCheck = false
+    internal var pendingCapsCheck = false
     /** After a held backspace is released, update auto-capitals once. */
-    private val capsAfterRepeat = Runnable {
+    internal val capsAfterRepeat = Runnable {
         if (pendingCapsCheck) { pendingCapsCheck = false; updateAutoCaps() }
     }
 
     // --- Emoji, clipboard, editing ---
 
-    private fun typeEmoji(e: String) {
-        typeText(e)
-        val updated = (listOf(e) + (recentEmoji.value - e)).take(32)
-        recentEmoji.value = updated
-        lifecycleScope.launch(Dispatchers.IO) { Settings(this@PinyinKeysService).recentEmoji = updated }
-    }
 
-    /**
-     * Reads the current clipboard text. Only called when the user opens the clipboard
-     * panel (an explicit action), never in the background. Android lets the keyboard
-     * that's currently in use read the clipboard.
-     */
-    private fun readClipboard(): String? {
-        if (clipBlocked) return null
-        val cm = getSystemService(android.content.ClipboardManager::class.java) ?: return null
-        val clip = cm.primaryClip ?: return null
-        if (clip.itemCount == 0) return null
-        return clip.getItemAt(0).coerceToText(this)?.toString()?.takeIf { it.isNotBlank() }
-    }
 
-    private fun pasteText(text: String) {
-        if (composing.value.isNotEmpty()) commitFirstCandidate()
-        clearAssist()
-        markOwnEdit()
-        if (rawKeyField) sendRaw(text)  // terminals take key presses
-        else currentInputConnection?.commitText(text, 1)
-        showPasteChip.value = false
-        currentWord = ""
-        suggestions.value = emptyList()
-        updateAutoCaps()
-    }
 
-    /** Pastes a history entry: text directly, an image through the app's image support. */
-    private fun pasteEntry(entry: String) {
-        showPasteChip.value = false
-        val file = Clips.imageFile(this, entry)
-        if (file == null) { pasteText(entry); return }
-        if (!file.exists()) { toast("That image is no longer available."); return }
-        val info = currentInputEditorInfo ?: return
-        val accepted = androidx.core.view.inputmethod.EditorInfoCompat.getContentMimeTypes(info)
-        if (accepted.none { android.content.ClipDescription.compareMimeTypes("image/png", it) }) {
-            toast("This app doesn't accept pasted images.")
-            return
-        }
-        val uri = androidx.core.content.FileProvider.getUriForFile(this, "$packageName.clips", file)
-        val content = androidx.core.view.inputmethod.InputContentInfoCompat(
-            uri, android.content.ClipDescription("image", arrayOf("image/png")), null,
-        )
-        androidx.core.view.inputmethod.InputConnectionCompat.commitContent(
-            currentInputConnection ?: return, info, content,
-            androidx.core.view.inputmethod.InputConnectionCompat.INPUT_CONTENT_GRANT_READ_URI_PERMISSION, null,
-        )
-    }
 
-    private fun toast(msg: String) = android.widget.Toast.makeText(this, msg, android.widget.Toast.LENGTH_SHORT).show()
 
-    /** Is the current clip marked sensitive (passwords etc.)? Android 13+ sets this flag. */
-    private fun isSensitiveClip(desc: android.content.ClipDescription): Boolean =
-        desc.extras?.getBoolean("android.content.extra.IS_SENSITIVE") == true
 
-    /**
-     * A new copy happened: save it to the history (text, or a private copy of an image)
-     * and offer it with the Paste button. Skips sensitive clips and password fields.
-     */
-    private fun onClipChanged() {
-        if (clipBlocked) return
-        val cm = getSystemService(android.content.ClipboardManager::class.java) ?: return
-        val desc = cm.primaryClipDescription ?: return
-        if (isSensitiveClip(desc)) return
-        lastSeenClipTime = desc.timestamp
-        val clip = cm.primaryClip ?: return
-        if (clip.itemCount == 0) return
-        val item = clip.getItemAt(0)
-        lifecycleScope.launch {
-            val entry = withContext(Dispatchers.IO) {
-                val uri = item.uri
-                if (uri != null && (0 until desc.mimeTypeCount).any { desc.getMimeType(it).startsWith("image/") }) {
-                    saveImage(uri)
-                } else {
-                    item.coerceToText(this@PinyinKeysService)?.toString()
-                        ?.takeIf { it.isNotBlank() && it.length <= 5000 }
-                }
-            } ?: return@launch
-            latestClip = entry
-            pendingScreenshot = null
-            updateHistory(listOf(entry) + clipHistory.value)
-            showPasteChip.value = true
-        }
-    }
 
-    /** Copies a clipboard image into private storage (the original link expires). */
-    private fun saveImage(uri: android.net.Uri): String? = runCatching {
-        val name = "clip_${System.currentTimeMillis()}.png"
-        val out = java.io.File(Clips.dir(this), name)
-        val bitmap = contentResolver.openInputStream(uri)?.use { android.graphics.BitmapFactory.decodeStream(it) }
-            ?: return null
-        out.outputStream().use { bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }
-        Clips.imageEntry(name)
-    }.getOrNull()
 
-    /** On keyboard open: catch a copy made while the keyboard wasn't running. */
-    private fun checkRecentCopy() {
-        showPasteChip.value = false
-        if (clipBlocked) return
-        val cm = getSystemService(android.content.ClipboardManager::class.java) ?: return
-        val desc = cm.primaryClipDescription ?: return
-        if (desc.timestamp != lastSeenClipTime && System.currentTimeMillis() - desc.timestamp < 60_000) {
-            onClipChanged()
-        }
-    }
 
-    private fun pasteFromChip() {
-        showPasteChip.value = false
-        val shot = pendingScreenshot
-        if (shot != null) {
-            pendingScreenshot = null
-            // Copy the screenshot now (the user asked to paste it), keep it in the history.
-            lifecycleScope.launch {
-                val entry = withContext(Dispatchers.IO) { saveImage(shot) }
-                if (entry == null) { toast("Couldn't read that screenshot."); return@launch }
-                updateHistory(listOf(entry) + clipHistory.value)
-                pasteEntry(entry)
-            }
-            return
-        }
-        latestClip?.let(::pasteEntry)
-    }
+    /** The copy / screenshot last pasted with the Paste button (not offered again). */
+    internal var pastedClipTime = 0L
+    internal var pastedScreenshot: android.net.Uri? = null
 
-    /** If enabled, offer a screenshot taken in the last minute (each one only once). */
-    private fun checkRecentScreenshot() {
-        if (sensitiveField.value) return
-        lifecycleScope.launch {
-            val uri = withContext(Dispatchers.IO) {
-                if (!Settings(this@PinyinKeysService).suggestScreenshots) null
-                else Screenshots.recent(this@PinyinKeysService)
-            } ?: return@launch
-            if (uri == offeredScreenshot) return@launch
-            offeredScreenshot = uri
-            pendingScreenshot = uri
-            showPasteChip.value = true
-        }
-    }
 
-    private fun updateHistory(list: List<String>) {
-        val updated = list.distinct().take(Clips.MAX_HISTORY)
-        // Delete image files that dropped out of the history and aren't pinned.
-        (clipHistory.value - updated.toSet() - pinnedClips.value.toSet())
-            .mapNotNull { Clips.imageFile(this, it) }.forEach { it.delete() }
-        clipHistory.value = updated
-        lifecycleScope.launch(Dispatchers.IO) { Settings(this@PinyinKeysService).clipHistory = updated }
-    }
 
-    private fun updatePinned(list: List<String>) {
-        val updated = list.distinct().take(50)
-        pinnedClips.value = updated
-        lifecycleScope.launch(Dispatchers.IO) { Settings(this@PinyinKeysService).pinnedClips = updated }
-    }
 
-    private fun edit(action: EditAction) {
-        val ic = currentInputConnection ?: return
-        currentWord = ""
-        suggestions.value = emptyList()
-        if (composing.value.isNotEmpty()) {
-            ic.finishComposingText()
-            setComposing("")
-        }
-        fun key(code: Int) {
-            ic.sendKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, code))
-            ic.sendKeyEvent(KeyEvent(KeyEvent.ACTION_UP, code))
-        }
-        when (action) {
-            EditAction.Left -> key(KeyEvent.KEYCODE_DPAD_LEFT)
-            EditAction.Right -> key(KeyEvent.KEYCODE_DPAD_RIGHT)
-            EditAction.Up -> key(KeyEvent.KEYCODE_DPAD_UP)
-            EditAction.Down -> key(KeyEvent.KEYCODE_DPAD_DOWN)
-            EditAction.Home -> key(KeyEvent.KEYCODE_MOVE_HOME)
-            EditAction.End -> key(KeyEvent.KEYCODE_MOVE_END)
-            // Context-menu actions are the same ones the app's own long-press menu uses.
-            EditAction.SelectAll -> ic.performContextMenuAction(android.R.id.selectAll)
-            EditAction.Cut -> ic.performContextMenuAction(android.R.id.cut)
-            EditAction.Copy -> ic.performContextMenuAction(android.R.id.copy)
-            EditAction.Paste -> ic.performContextMenuAction(android.R.id.paste)
-        }
-    }
 
-    private fun openSettings() {
-        startActivity(Intent(this, SetupActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-    }
 
-    private fun onlyHan(s: String) = s.filter { Character.UnicodeScript.of(it.code) == Character.UnicodeScript.HAN }
 
-    /** Compares what's typed so far (the field was cleared at the start) with the translation. */
-    private fun refreshGuided() {
-        val target = guidedTarget ?: return
-        val typed = onlyHan(currentInputConnection?.getTextBeforeCursor(2000, 0)?.toString() ?: "")
-        val all = onlyHan(target.joinToString(""))
-        val same = typed.zip(all).takeWhile { (a, b) -> a == b }.count()
-        guidedRemaining = all.drop(same)
-        var pos = 0
-        var done = 0
-        for (t in target) {
-            val len = onlyHan(t).length
-            if (same >= pos + len) { done++; pos += len } else break
-        }
-        guidedDone.value = done
-    }
 
-    private fun endGuided() {
-        guidedTarget = null
-        guidedRemaining = ""
-        guidedDone.value = 0
-    }
+
 
     // --- Shift and Chinese mode ---
 
     /** Shift key: off -> one capital -> caps lock -> off. */
-    private var lastShiftTap = 0L
+    internal var lastShiftTap = 0L
 
-    /** Shift: tap = one capital, double-tap = caps lock, tap again = off. */
-    private fun cycleShift() {
-        val now = android.os.SystemClock.uptimeMillis()
-        val doubleTap = now - lastShiftTap < 350
-        lastShiftTap = now
-        shift.value = when {
-            shift.value == Shift.Off -> Shift.On
-            shift.value == Shift.On && doubleTap -> Shift.Lock
-            else -> Shift.Off
-        }
-    }
 
-    /**
-     * Capitalize automatically at the start of a sentence. The app decides whether its
-     * field wants this (getCursorCapsMode returns 0 for fields like emails or URLs).
-     */
-    private fun updateAutoCaps() {
-        if (shift.value == Shift.Lock || chinese.value) return
-        val ic = currentInputConnection ?: return
-        val type = currentInputEditorInfo?.inputType ?: return
-        shift.value = if (ic.getCursorCapsMode(type) != 0) Shift.On else Shift.Off
-    }
 
-    private fun toggleChinese() {
-        if (composing.value.isNotEmpty()) {
-            // Keep what was typed as plain letters.
-            currentInputConnection?.finishComposingText()
-            setComposing("")
-        }
-        chinese.value = !chinese.value
-        shift.value = Shift.Off
-        // With a finished translation on screen, switching to 中 means "let me type it":
-        // clear the English and guide the typing. Switching back ends it.
-        val shown = assistState.value as? AssistState.Result
-        if (chinese.value && shown != null && shown.complete) {
-            replaceField("")
-            guidedTarget = shown.reply?.let { listOf(it.hanzi) } ?: shown.result.sentences.map { it.hanzi }
-            refreshGuided()
-        } else if (!chinese.value) {
-            endGuided()
-        }
-        if (chinese.value && dictionary == null) {
-            // Load the dictionary in the background the first time Chinese mode is used.
-            lifecycleScope.launch {
-                dictionary = withContext(Dispatchers.IO) { PinyinDictionary.get(this@PinyinKeysService) }
-                setComposing(composing.value)  // refresh suggestions if letters were typed meanwhile
-            }
-        } else {
-            updateAutoCaps()
-        }
-    }
 
-    /**
-     * Shows the typed pinyin underlined in the app's text field ("composing text",
-     * the standard way keyboards show unfinished input) and updates suggestions.
-     */
-    private fun setComposing(letters: String) {
-        composing.value = letters
-        val found = dictionary?.candidates(letters) ?: emptyList()
-        // Guided: put suggestions that continue the translation first (longest first).
-        candidates.value = if (guidedTarget != null && guidedRemaining.isNotEmpty()) {
-            val (match, rest) = found.partition { guidedRemaining.startsWith(onlyHan(it.word)) && onlyHan(it.word).isNotEmpty() }
-            match.sortedByDescending { it.word.length } + rest
-        } else found
-        val ic = currentInputConnection ?: return
-        if (letters.isEmpty()) ic.commitText("", 1) else ic.setComposingText(letters, 1)
-    }
 
-    /** Suggestion tapped: put it in, and keep any letters it didn't use for the next pick. */
-    private fun pickCandidate(c: Candidate) {
-        val rest = composing.value.drop(c.consumed)
-        val ic = currentInputConnection ?: return
-        ic.commitText(c.word, 1)  // replaces the underlined pinyin
-        composing.value = ""
-        refreshGuided()
-        setComposing(rest)
-    }
 
-    /** Space or punctuation while typing pinyin: take the top suggestion (or the letters). */
-    private fun commitFirstCandidate() {
-        while (composing.value.isNotEmpty()) {
-            val first = candidates.value.firstOrNull()
-            if (first == null) {
-                currentInputConnection?.commitText(composing.value, 1)
-                composing.value = ""
-                candidates.value = emptyList()
-                return
-            }
-            pickCandidate(first)
-            // Space commits one pick; if letters remain, leave them for the user to choose.
-            return
-        }
-    }
 
-    private fun enter() {
-        // Enter while typing pinyin: keep the letters as they are, don't send yet.
-        if (composing.value.isNotEmpty()) {
-            currentInputConnection?.finishComposingText()
-            composing.value = ""
-            candidates.value = emptyList()
-            return
-        }
-        clearAssist()
-        practiceState.value = PracticeState.Idle
-        currentInputConnection?.let { finishWord(it, autocorrectOnly = false) }
-        // You sent (or finished) the message with these new words as typed: they're yours.
-        if (suggestionsAllowed()) messageNewWords.forEach(::keepWord)
-        messageNewWords.clear()
-        sentence.clear()
-        suggestions.value = emptyList()
-        val ic = currentInputConnection ?: return
-        val info = currentInputEditorInfo
-        // Many chat apps set an "action" (Send, Go, ...) on their field. If there is one,
-        // and the field didn't ask us not to, trigger it; otherwise insert a newline.
-        val action = (info?.imeOptions ?: 0) and EditorInfo.IME_MASK_ACTION
-        val noEnterAction = ((info?.imeOptions ?: 0) and EditorInfo.IME_FLAG_NO_ENTER_ACTION) != 0
-        if (action != EditorInfo.IME_ACTION_NONE && action != EditorInfo.IME_ACTION_UNSPECIFIED && !noEnterAction) {
-            ic.performEditorAction(action)
-        } else {
-            ic.sendKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_ENTER))
-            ic.sendKeyEvent(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_ENTER))
-        }
-    }
 
     // --- Assist mode ---
 
-    /** Reads the whole text field. Only ever called from the Translate button. */
-    private fun readFieldText(): String {
-        val ic = currentInputConnection ?: return ""
-        val extracted = ic.getExtractedText(ExtractedTextRequest(), 0)?.text?.toString()
-        val text = extracted ?: buildString {
-            append(ic.getTextBeforeCursor(MAX_FIELD_CHARS, 0) ?: "")
-            append(ic.getSelectedText(0) ?: "")
-            append(ic.getTextAfterCursor(MAX_FIELD_CHARS, 0) ?: "")
-        }
-        // Length only, never content (see CLAUDE.md).
-        Log.d(TAG, "Read field: ${text.length} chars (extracted=${extracted != null})")
-        return text
-    }
 
-    private fun translateField() {
-        if (sensitiveField.value) return
-        val text = readFieldText().trim()
-        if (text.isEmpty()) {
-            assistState.value = AssistState.Error("Type something first.")
-            return
-        }
-        val service = Settings(this).translationService()
-        if (service == null) {
-            assistState.value = AssistState.Error("Add your API key in the Pinyin Keys app.")
-            return
-        }
-        translateJob?.cancel()
-        detailsStates.clear(); whyStates.clear(); savedStates.clear()
-        assistState.value = AssistState.Loading
-        // lifecycleScope is cancelled automatically when the keyboard service is destroyed.
-        translateJob = lifecycleScope.launch {
-            val job = coroutineContext[Job]
-            // Cards by sentence position; cached ones fill in instantly, the rest as they arrive.
-            val partial = sortedMapOf<Int, com.pinyinkeys.ime.translate.Sentence>()
-            assistState.value = try {
-                // Dispatchers.IO: network must not run on the main (UI) thread.
-                val result = withContext(Dispatchers.IO) {
-                    Translator(this@PinyinKeysService, service, tone.value).translate(text) { i, sentence ->
-                        // Called on a background thread as each sentence is ready: show it right away.
-                        mainHandler.post {
-                            if (translateJob != job || job?.isActive != true) return@post
-                            partial[i] = sentence
-                            assistState.value = AssistState.Result(
-                                com.pinyinkeys.ime.translate.TranslationResult(partial.values.toList()), complete = false,
-                            )
-                        }
-                    }
-                }
-                AssistState.Result(com.pinyinkeys.ime.translate.TranslationResult(result))
-            } catch (e: TranslationException) {
-                AssistState.Error(e.userMessage)
-            } catch (e: Exception) {
-                if (e is kotlinx.coroutines.CancellationException) throw e
-                Log.w(TAG, "Translate failed: ${e.javaClass.simpleName}")
-                // Release builds rename classes, so also note what kind of error it was.
-                AssistState.Error("Couldn't translate (E4: ${errorKind(e)}). Try again.")
-            }
-        }
-    }
 
-    /** Card opened: load its breakdown (saved copy first, otherwise the API, once). */
-    private fun loadDetails(sentence: Sentence) {
-        if (sensitiveField.value) return
-        val current = detailsStates[sentence]
-        if (current is Load.Loading || current is Load.Loaded) return
-        detailsStates[sentence] = Load.Loading
-        lifecycleScope.launch {
-            detailsStates[sentence] = onDemand("Couldn't load breakdown. Try again.") { cache, service ->
-                // Breakdowns saved before word meanings existed are fetched again once.
-                cache.getDetails(sentence)?.takeIf { d -> d.chunks.all { it.meaning.isNotEmpty() } }
-                    ?: service().details(sentence).also { cache.putDetails(sentence, it) }
-            }
-        }
-    }
 
-    /** "Why?" tapped: saved answer if there is one, otherwise ask the API once. */
-    private fun explain(sentence: Sentence) {
-        if (sensitiveField.value) return
-        val details = (detailsStates[sentence] as? Load.Loaded)?.value ?: return
-        val current = whyStates[sentence]
-        if (current is Load.Loading || current is Load.Loaded) return
-        whyStates[sentence] = Load.Loading
-        lifecycleScope.launch {
-            whyStates[sentence] = onDemand("Couldn't load explanation. Try again.") { cache, service ->
-                cache.getWhy(sentence) ?: service().explain(sentence, details).also { cache.putWhy(sentence, it) }
-            }
-        }
-    }
 
-    /** Star tapped: save the sentence (with its breakdown) to the on-phone database. */
-    private fun saveSentence(sentence: Sentence) {
-        if (sensitiveField.value) return
-        val current = savedStates[sentence]
-        if (current is Load.Loading || current is Load.Loaded) return
-        savedStates[sentence] = Load.Loading
-        lifecycleScope.launch {
-            savedStates[sentence] = onDemand("Couldn't save. Try again.") { cache, service ->
-                val details = cache.getDetails(sentence)
-                    ?: service().details(sentence).also { cache.putDetails(sentence, it) }
-                kotlinx.coroutines.runBlocking {
-                    val dao = AppDatabase.get(this@PinyinKeysService).saved()
-                    if (!dao.exists(sentence.en, sentence.hanzi)) {
-                        dao.insert(
-                            SavedSentence(
-                                en = sentence.en, hanzi = sentence.hanzi, pinyin = sentence.pinyin,
-                                chunksJson = kotlinx.serialization.json.Json.encodeToString(
-                                    kotlinx.serialization.builtins.ListSerializer(Chunk.serializer()), details.chunks,
-                                ),
-                                savedAt = System.currentTimeMillis(),
-                            )
-                        )
-                    }
-                }
-            }
-        }
-    }
 
-    /** A short, content-free description of an unexpected error, for the on-screen message. */
-    private fun errorKind(e: Throwable): String = when (e) {
-        is java.io.IOException -> "network"
-        is SecurityException -> "permission"
-        is IllegalStateException -> "state"
-        is IllegalArgumentException -> "argument"
-        is NullPointerException -> "null"
-        else -> e.javaClass.simpleName.take(20)
-    }
 
     /** Runs [block] off the main thread and turns the outcome (or any error) into a [Load]. */
-    private suspend fun <T> onDemand(
+    internal suspend fun <T> onDemand(
         fallbackError: String,
         block: (SentenceCache, () -> TranslationService) -> T,
     ): Load<T> = try {
@@ -1597,262 +1235,45 @@ class PinyinKeysService : InputMethodService(),
         Load.Error(fallbackError)
     }
 
-    private var lastWarmUpAt = 0L
+    internal var lastWarmUpAt = 0L
 
-    /**
-     * When the keyboard opens, set up the API connection ahead of time so Translate is
-     * faster. Sends no message text (owner's decision; see CLAUDE.md). At most once a minute.
-     */
-    private fun warmUpConnection() {
-        if (sensitiveField.value) return
-        val now = android.os.SystemClock.uptimeMillis()
-        if (now - lastWarmUpAt < 60_000) return
-        lastWarmUpAt = now
-        lifecycleScope.launch(Dispatchers.IO) {
-            Settings(this@PinyinKeysService).translationService()?.warmUp()
-        }
-    }
 
-    /** Long-press alternate chosen: swap the character just typed for [alt]. */
-    private fun replaceLastChar(alt: String) {
-        if (composing.value.isNotEmpty()) {
-            setComposing(composing.value.dropLast(1))
-        } else {
-            markOwnEdit()
-            currentInputConnection?.deleteSurroundingText(1, 0)
-            if (currentWord.isNotEmpty()) currentWord = currentWord.dropLast(1)
-        }
-        typeText(alt)
-    }
 
-    /** A space-bar slide started: take back the space that was typed on touch-down. */
-    private fun undoSpace() {
-        val ic = currentInputConnection ?: return
-        if (ic.getTextBeforeCursor(1, 0)?.toString() == " ") { markOwnEdit(); ic.deleteSurroundingText(1, 0) }
-    }
 
-    /** Space-bar slide: move the cursor [steps] characters (negative = left). */
-    private fun moveCursor(steps: Int) {
-        val ic = currentInputConnection ?: return
-        if (composing.value.isNotEmpty()) { ic.finishComposingText(); setComposing("") }
-        currentWord = ""
-        suggestions.value = emptyList()
-        val code = if (steps < 0) KeyEvent.KEYCODE_DPAD_LEFT else KeyEvent.KEYCODE_DPAD_RIGHT
-        repeat(kotlin.math.abs(steps)) {
-            ic.sendKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, code))
-            ic.sendKeyEvent(KeyEvent(KeyEvent.ACTION_UP, code))
-        }
-    }
 
-    private fun togglePolite() {
-        // Cycles 随 casual → 俏 slang → 敬 polite.
-        tone.value = tone.value.next()
-        val v = tone.value
-        lifecycleScope.launch(Dispatchers.IO) { Settings(this@PinyinKeysService).tone = v }
-        toast("${v.label} tone (${v.icon}) for translations")
-    }
 
-    /**
-     * 解: explain a Chinese message you copied (from a chat). Reads the clipboard because
-     * you tapped the button, sends that text to the API, and shows sentence cards with
-     * pinyin and English plus a suggested reply that Insert can type for you.
-     */
-    private fun explainCopied() {
-        if (sensitiveField.value) return
-        val text = latestClip?.takeIf { !Clips.isImage(it) } ?: readClipboard()
-        if (text.isNullOrBlank() || onlyHan(text).isEmpty()) {
-            assistState.value = AssistState.Error("Copy a Chinese message first, then tap 解.")
-            return
-        }
-        val service = Settings(this).translationService()
-            ?: run { assistState.value = AssistState.Error("Add your API key in the Pinyin Keys app."); return }
-        translateJob?.cancel()
-        detailsStates.clear(); whyStates.clear(); savedStates.clear()
-        assistState.value = AssistState.Loading
-        translateJob = lifecycleScope.launch {
-            assistState.value = try {
-                val ex = withContext(Dispatchers.IO) { service.explainChinese(text.take(2000)) }
-                AssistState.Result(
-                    com.pinyinkeys.ime.translate.TranslationResult(ex.sentences), complete = true, reply = ex.reply,
-                )
-            } catch (e: TranslationException) {
-                AssistState.Error(e.userMessage)
-            } catch (e: Exception) {
-                if (e is kotlinx.coroutines.CancellationException) throw e
-                AssistState.Error("Couldn't explain (E4: ${errorKind(e)}). Try again.")
-            }
-        }
-    }
 
     // --- Practice mode ---
 
-    private fun setMode(m: Mode) {
-        mode.value = m
-        clearAssist()
-        practiceState.value = PracticeState.Idle
-    }
 
-    /** Translate the field, load every sentence's syllables, clear the English, start. */
-    private fun startPractice() {
-        if (sensitiveField.value) return
-        // Restart: the field now holds Chinese, so replay the same sentences from the top.
-        (practiceState.value as? PracticeState.Active)?.let { p ->
-            replaceField("")
-            practiceState.value = commitAutoUnits(PracticeState.Active(p.sentences, p.units))
-            return
-        }
-        val text = readFieldText().trim()
-        if (text.isEmpty()) {
-            practiceState.value = PracticeState.Error("Type the English first.")
-            return
-        }
-        translateJob?.cancel()
-        practiceState.value = PracticeState.Loading
-        translateJob = lifecycleScope.launch {
-            val result = onDemand("Couldn't start practice. Try again.") { cache, service ->
-                strictTones = Settings(this@PinyinKeysService).strictTones
-                val svc = service()
-                val sentences = Translator(this@PinyinKeysService, svc, tone.value).translate(text)
-                val units = sentences.map { s ->
-                    val d = cache.getDetails(s) ?: svc.details(s).also { cache.putDetails(s, it) }
-                    Practice.buildUnits(s, d)
-                        ?: throw TranslationException("Couldn't line up the pinyin. Try again.")
-                }
-                PracticeState.Active(sentences, units)
-            }
-            practiceState.value = when (result) {
-                is Load.Loaded -> {
-                    replaceField("")
-                    commitAutoUnits(result.value)
-                }
-                is Load.Error -> PracticeState.Error(result.message)
-                Load.Loading -> PracticeState.Loading
-            }
-        }
-    }
 
-    /** Handles a typed key in Practice. Returns true if Practice used it. */
-    private fun practiceTyped(text: String): Boolean {
-        val p = practiceState.value
-        if (mode.value != Mode.Practice || p !is PracticeState.Active || p.done) return false
-        val c = text.singleOrNull() ?: return true
-        if (!c.isLetterOrDigit()) return true  // ignore space/punctuation: it's filled in for you
-        val target = p.current?.syllable ?: return true
-        val buffer = p.buffer + c.lowercaseChar()
-        practiceState.value = if (Practice.matches(buffer, target, strictTones)) {
-            currentInputConnection?.commitText(p.current!!.text, 1)
-            commitAutoUnits(p.copy(unitIndex = p.unitIndex + 1, buffer = "", hintShown = false))
-        } else {
-            p.copy(buffer = buffer)
-        }
-        return true
-    }
 
-    /** Commits punctuation automatically and moves to the next sentence when one is finished. */
-    private fun commitAutoUnits(start: PracticeState.Active): PracticeState.Active {
-        var p = start
-        while (true) {
-            val cur = p.current
-            if (cur == null) {
-                if (p.sentenceIndex + 1 < p.units.size) {
-                    p = p.copy(sentenceIndex = p.sentenceIndex + 1, unitIndex = 0)
-                    continue
-                }
-                return p  // all done
-            }
-            if (cur.syllable != null) return p
-            currentInputConnection?.commitText(cur.text, 1)
-            p = p.copy(unitIndex = p.unitIndex + 1)
-        }
-    }
 
-    private fun showHint() {
-        val p = practiceState.value as? PracticeState.Active ?: return
-        practiceState.value = p.copy(hintShown = true)
-    }
 
-    /** Replaces everything in the text field with [text]. */
-    private fun replaceField(text: String) {
-        val ic = currentInputConnection ?: return
-        // Batch edit: the app sees one change instead of several flickering ones.
-        ic.beginBatchEdit()
-        val before = ic.getTextBeforeCursor(MAX_FIELD_CHARS, 0)?.length ?: 0
-        val after = ic.getTextAfterCursor(MAX_FIELD_CHARS, 0)?.length ?: 0
-        markOwnEdit()
-        if (!ic.getSelectedText(0).isNullOrEmpty()) ic.commitText("", 1)
-        ic.deleteSurroundingText(before, after)
-        if (text.isNotEmpty()) ic.commitText(text, 1)
-        ic.endBatchEdit()
-    }
 
-    /** Replaces everything in the text field with the Chinese. */
-    private fun insertChinese() {
-        val state = assistState.value as? AssistState.Result ?: return
-        if (!state.complete) return
-        // After explaining a received message, Insert types the suggested reply.
-        state.reply?.let { replyWith ->
-            replaceField(replyWith.hanzi)
-            assistState.value = AssistState.Idle
-            return
-        }
-        val result = state.result
-        replaceField(result.sentences.joinToString("") { it.hanzi })
-        assistState.value = AssistState.Idle
-    }
 
-    /** The action the app shows on its enter key ("Done", "Next"...), if any. */
-    private fun enterLabelFor(info: EditorInfo): String? {
-        if (info.imeOptions and EditorInfo.IME_FLAG_NO_ENTER_ACTION != 0) return null
-        return when (info.imeOptions and EditorInfo.IME_MASK_ACTION) {
-            EditorInfo.IME_ACTION_DONE -> "Done"
-            EditorInfo.IME_ACTION_NEXT -> "Next"
-            EditorInfo.IME_ACTION_GO -> "Go"
-            EditorInfo.IME_ACTION_SEND -> "Send"
-            EditorInfo.IME_ACTION_SEARCH -> "Search"
-            EditorInfo.IME_ACTION_PREVIOUS -> "Back"
-            else -> null
-        }
-    }
 
-    /**
-     * Terminal / SSH apps: they mark their input as "raw keys" or as a visible password
-     * (to turn off autocorrect), but they aren't password fields. They still get the
-     * plain keyboard, plus the clipboard (owner's decision; see CLAUDE.md).
-     */
-    private fun isTerminal(info: EditorInfo): Boolean =
-        info.inputType == InputType.TYPE_NULL || info.packageName in TERMINAL_APPS
 
-    private fun isSensitive(info: EditorInfo): Boolean {
-        val cls = info.inputType and InputType.TYPE_MASK_CLASS
-        val variation = info.inputType and InputType.TYPE_MASK_VARIATION
-        val password = (cls == InputType.TYPE_CLASS_TEXT && variation in setOf(
-            InputType.TYPE_TEXT_VARIATION_PASSWORD,
-            InputType.TYPE_TEXT_VARIATION_VISIBLE_PASSWORD,
-            InputType.TYPE_TEXT_VARIATION_WEB_PASSWORD,
-        )) || (cls == InputType.TYPE_CLASS_NUMBER &&
-            variation == InputType.TYPE_NUMBER_VARIATION_PASSWORD)
-        val noLearning = (info.imeOptions and EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING) != 0
-        // Terminals ask for raw key presses: plain keyboard, nothing learned or read.
-        val raw = info.inputType == InputType.TYPE_NULL
-        return password || noLearning || raw
-    }
 
     companion object {
+        /** Times a word must be written capitalised mid-sentence before it's learned. */
+        internal const val CAP_AFTER = 2
+
         /** Well-known terminal / SSH apps (public package names). */
-        private val TERMINAL_APPS = setOf(
+        internal val TERMINAL_APPS = setOf(
             "com.server.auditor.ssh.client",  // Termius
             "com.termux",
             "com.sonelli.juicessh",
             "org.connectbot",
         )
-        private const val TAG = "PinyinKeys"
-        private const val MAX_FIELD_CHARS = 10_000
+        internal const val TAG = "PinyinKeys"
+        internal const val MAX_FIELD_CHARS = 10_000
         /** Marks the "keep exactly what I typed" suggestion. */
         const val LITERAL = "\u0001"
         /** Marks the suggestion that space will put in place of your word (autocorrect). */
         const val AUTO = "\u0002"
         /** In Chinese mode these keys type the full-width Chinese punctuation instead. */
-        private val CHINESE_PUNCTUATION = mapOf(
+        internal val CHINESE_PUNCTUATION = mapOf(
             "," to "，", "." to "。", "?" to "？", "!" to "！", ":" to "：", ";" to "；",
             "(" to "（", ")" to "）",
         )
