@@ -45,12 +45,12 @@ internal fun PinyinKeysService.readFieldText(): String {
     val ic = currentInputConnection ?: return ""
     val extracted = ic.getExtractedText(ExtractedTextRequest(), 0)?.text?.toString()
     val text = extracted ?: buildString {
-        append(ic.getTextBeforeCursor(MAX_FIELD_CHARS, 0) ?: "")
+        append(ic.getTextBeforeCursor(PinyinKeysService.MAX_FIELD_CHARS, 0) ?: "")
         append(ic.getSelectedText(0) ?: "")
-        append(ic.getTextAfterCursor(MAX_FIELD_CHARS, 0) ?: "")
+        append(ic.getTextAfterCursor(PinyinKeysService.MAX_FIELD_CHARS, 0) ?: "")
     }
     // Length only, never content (see CLAUDE.md).
-    Log.d(TAG, "Read field: ${text.length} chars (extracted=${extracted != null})")
+    Log.d(PinyinKeysService.TAG, "Read field: ${text.length} chars (extracted=${extracted != null})")
     return text
 }
 
@@ -93,7 +93,7 @@ internal fun PinyinKeysService.translateField() {
             AssistState.Error(e.userMessage)
         } catch (e: Exception) {
             if (e is kotlinx.coroutines.CancellationException) throw e
-            Log.w(TAG, "Translate failed: ${e.javaClass.simpleName}")
+            Log.w(PinyinKeysService.TAG, "Translate failed: ${e.javaClass.simpleName}")
             // Release builds rename classes, so also note what kind of error it was.
             AssistState.Error("Couldn't translate (E4: ${errorKind(e)}). Try again.")
         }
@@ -226,8 +226,8 @@ internal fun PinyinKeysService.replaceField(text: String) {
     val ic = currentInputConnection ?: return
     // Batch edit: the app sees one change instead of several flickering ones.
     ic.beginBatchEdit()
-    val before = ic.getTextBeforeCursor(MAX_FIELD_CHARS, 0)?.length ?: 0
-    val after = ic.getTextAfterCursor(MAX_FIELD_CHARS, 0)?.length ?: 0
+    val before = ic.getTextBeforeCursor(PinyinKeysService.MAX_FIELD_CHARS, 0)?.length ?: 0
+    val after = ic.getTextAfterCursor(PinyinKeysService.MAX_FIELD_CHARS, 0)?.length ?: 0
     markOwnEdit()
     if (!ic.getSelectedText(0).isNullOrEmpty()) ic.commitText("", 1)
     ic.deleteSurroundingText(before, after)

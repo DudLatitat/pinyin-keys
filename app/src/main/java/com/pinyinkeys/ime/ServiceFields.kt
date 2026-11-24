@@ -60,7 +60,7 @@ internal fun PinyinKeysService.enterLabelFor(info: EditorInfo): String? {
  * plain keyboard, plus the clipboard (owner's decision; see CLAUDE.md).
  */
 internal fun PinyinKeysService.isTerminal(info: EditorInfo): Boolean =
-    info.inputType == InputType.TYPE_NULL || info.packageName in TERMINAL_APPS
+    info.inputType == InputType.TYPE_NULL || info.packageName in PinyinKeysService.TERMINAL_APPS
 
 internal fun PinyinKeysService.isSensitive(info: EditorInfo): Boolean {
     val cls = info.inputType and InputType.TYPE_MASK_CLASS
