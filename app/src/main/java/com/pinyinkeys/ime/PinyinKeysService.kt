@@ -459,8 +459,30 @@ class PinyinKeysService : InputMethodService(),
         detailsStates.clear(); whyStates.clear(); savedStates.clear()
     }
 
+    /** True while held backspace should keep sending Delete key presses (see backspace()). */
+    private var deleteWithKeyEvent = false
+
+    /**
+     * Terminal-style fields (input type "none", e.g. SSH apps) take key presses, not text.
+     * There we send each character as a key press and never read anything back.
+     */
+    private val rawKeyField: Boolean
+        get() = currentInputEditorInfo?.inputType == InputType.TYPE_NULL
+
+    private val keyMap by lazy { android.view.KeyCharacterMap.load(android.view.KeyCharacterMap.VIRTUAL_KEYBOARD) }
+
+    private fun sendRaw(text: String) {
+        val ic = currentInputConnection ?: return
+        // The phone's built-in key map turns characters into key presses (with shift where
+        // needed); characters it can't (e.g. emoji) are sent as plain text.
+        val events = keyMap.getEvents(text.toCharArray())
+        if (events != null) events.forEach { ic.sendKeyEvent(it) } else ic.commitText(text, 1)
+        if (shift.value == Shift.On) shift.value = Shift.Off
+    }
+
     private fun typeText(text: String) {
         showPasteChip.value = false
+        if (rawKeyField) { sendRaw(text); return }
         if (practiceTyped(text)) return
         val ic = currentInputConnection ?: return
         val isChinese = chinese.value && !sensitiveField.value
@@ -579,6 +601,8 @@ class PinyinKeysService : InputMethodService(),
         }
         if (!chinese.value) clearAssist()
         val ic = currentInputConnection ?: return
+        // Terminals and similar apps: a real Delete key press.
+        if (rawKeyField) { sendDownUpKeyEvents(KeyEvent.KEYCODE_DEL); return }
         markOwnEdit()  // our own deletion moves the cursor back; don't treat it as a jump
         if (guidedTarget != null) mainHandler.post { refreshGuided() }
         if (undoAutocorrect()) return
@@ -613,7 +637,8 @@ class PinyinKeysService : InputMethodService(),
                 val trimmed = before.trimEnd()
                 val wordStart = trimmed.lastIndexOfAny(charArrayOf(' ', '\n')) + 1
                 ic.deleteSurroundingText(maxOf(1, before.length - wordStart), 0)
-            } else ic.deleteSurroundingText(1, 0)
+            } else if (deleteWithKeyEvent) sendDownUpKeyEvents(KeyEvent.KEYCODE_DEL)
+            else ic.deleteSurroundingText(1, 0)
             pendingCapsCheck = true
             mainHandler.removeCallbacks(capsAfterRepeat)
             mainHandler.postDelayed(capsAfterRepeat, 200)
@@ -621,7 +646,12 @@ class PinyinKeysService : InputMethodService(),
         }
         // If text is selected, delete the selection; otherwise delete one character.
         val selected = ic.getSelectedText(0)
-        if (!selected.isNullOrEmpty()) ic.commitText("", 1) else ic.deleteSurroundingText(1, 0)
+        // Some apps (terminals, some games) don't show their text to keyboards, so there's
+        // nothing "before the cursor" to delete: send a Delete key press instead.
+        deleteWithKeyEvent = selected.isNullOrEmpty() && ic.getTextBeforeCursor(1, 0).isNullOrEmpty()
+        if (!selected.isNullOrEmpty()) ic.commitText("", 1)
+        else if (deleteWithKeyEvent) sendDownUpKeyEvents(KeyEvent.KEYCODE_DEL)
+        else ic.deleteSurroundingText(1, 0)
         updateAutoCaps()
         // Backspaced into the end of an earlier word: pick it back up.
         if (currentWord.isEmpty()) recoverWord()
@@ -1706,7 +1736,9 @@ class PinyinKeysService : InputMethodService(),
         )) || (cls == InputType.TYPE_CLASS_NUMBER &&
             variation == InputType.TYPE_NUMBER_VARIATION_PASSWORD)
         val noLearning = (info.imeOptions and EditorInfo.IME_FLAG_NO_PERSONALIZED_LEARNING) != 0
-        return password || noLearning
+        // Terminals ask for raw key presses: plain keyboard, nothing learned or read.
+        val raw = info.inputType == InputType.TYPE_NULL
+        return password || noLearning || raw
     }
 
     companion object {

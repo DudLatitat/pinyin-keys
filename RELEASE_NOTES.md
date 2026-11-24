@@ -3,6 +3,11 @@ A personal Android keyboard that shows Chinese and pinyin for the English you ty
 **Install:** download `pinyin-keys-<version>.apk` below, open it on the phone, then turn on
 Pinyin Keys in the system keyboard settings. Add your Claude API key in the Pinyin Keys app.
 
+## New in 1.6.2
+- Terminal and SSH apps: typing now works. In fields that want raw key presses, each key
+  is sent as a real key press, and backspace sends a Delete key when the app doesn't share
+  its text with the keyboard. Those fields get the plain keyboard (nothing learned).
+
 ## New in 1.6.1
 - Fixed: the next word sometimes got a capital letter in the middle of a sentence. Capitals
   after a space are now decided from the text just before it (only after . ? ! or at the
