@@ -134,12 +134,19 @@ class EnglishDictionary private constructor(
      * candidate one or two slips away (or two words run together), if it's clearly more
      * likely. A real word you typed is only replaced on very strong evidence.
      */
-    fun autocorrect(typed: String, touches: List<Touch?> = emptyList(), boost: Map<String, Double> = emptyMap()): String? {
+    fun autocorrect(
+        typed: String,
+        touches: List<Touch?> = emptyList(),
+        boost: Map<String, Double> = emptyMap(),
+        useLearned: Boolean = true,
+    ): String? {
         val lower = typed.lowercase()
         if (lower in userWords) return null
-        // A misspelling you corrected by picking a word before: use that word.
-        if (lower !in byLower) preferred[lower]?.let { return matchCase(written(it), typed) }
-        learnedFixes[lower]?.let { return matchCase(written(it), typed) }
+        if (useLearned) {
+            // A misspelling you corrected by picking a word before: use that word.
+            if (lower !in byLower) preferred[lower]?.let { return matchCase(written(it), typed) }
+            learnedFixes[lower]?.let { return matchCase(written(it), typed) }
+        }
         // Keep the dictionary's capitals: "im" -> "I'm".
         if (lower !in byLower) apostropheFix(lower)?.let { return matchCase(written(it), typed) }
         if (typed == "i") return "I"
@@ -223,13 +230,38 @@ class EnglishDictionary private constructor(
     }
 
     /**
+     * Is [fix] a believable correction of [typo] (worth learning)? It must be a real word
+     * reachable by a couple of likely slips, or a completion of a few letters. Rules out
+     * one-letter "typos" and unrelated swaps like "v" -> "so".
+     */
+    fun isPlausibleFix(typo: String, fix: String): Boolean {
+        if (typo.length < 2 || typo == fix || !isWord(fix)) return false
+        if (fix.startsWith(typo) && fix.length - typo.length <= 4) return true
+        val cost = corrections(typo, emptyList()).firstOrNull { it.first == fix }?.second ?: return false
+        return cost <= MAX_LEARN_COST
+    }
+
+    /** True if autocorrect already turns [typo] into [fix] without being taught. */
+    fun fixesOnItsOwn(typo: String, fix: String): Boolean =
+        autocorrect(typo, useLearned = false)?.equals(fix, ignoreCase = true) == true
+
+    /**
      * Two words run together or with a slip instead of space: "ofthe" -> "of the",
      * "thebcat" -> "the cat" (b/n/v/c/m are next to the space bar). Returns the best
      * split and its score, or null.
      */
     private fun bestSplit(lower: String, boost: Map<String, Double>): Pair<String, Double>? {
         if (lower.length < 4 || '\'' in lower) return null
-        fun ok(w: String) = (w.length >= 2 || w == "a" || w == "i") && (byLower[w]?.second ?: 0) >= MIN_FIX_FREQ
+        // Both halves must be common words (short ones very common), so rare fragments
+        // like "ion" or "sailing" + "a" don't win over a real correction.
+        fun ok(w: String): Boolean {
+            val f = byLower[w]?.second ?: return false
+            return when {
+                w.length == 1 -> w == "a" || w == "i"
+                w.length <= 3 -> f >= 170
+                else -> f >= 100
+            }
+        }
         var best: Pair<String, Double>? = null
         fun offer(l: String, r: String, penalty: Double) {
             if (!ok(l) || !ok(r)) return
@@ -345,6 +377,8 @@ class EnglishDictionary private constructor(
         /** Fix only to words at least this common (zipf 1.75), and up to this total edit cost. */
         private const val MIN_FIX_FREQ = 30
         private const val MAX_FIX_COST = 1.6
+        /** Fixes costlier than this aren't learned (too unlike a slip). */
+        private const val MAX_LEARN_COST = 2.0
         /** A real word you typed is kept unless a slip-away word is this much more likely. */
         private const val KEEP_BONUS = 1.0
         private const val REAL_WORD_MARGIN = 3.5

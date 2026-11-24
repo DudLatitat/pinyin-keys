@@ -128,6 +128,28 @@ class TypingQualityTest {
         assertTrue("changed real words: $changed", changed.isEmpty())
     }
 
+    /**
+     * Real-world spelling mistakes (Wikipedia's common misspellings list, CC BY-SA 4.0):
+     * how often autocorrect fixes them on space, and how often the right word is among
+     * the 3 suggestions.
+     */
+    @Test fun commonMisspellings() {
+        val pairs = javaClass.getResource("/misspellings.tsv")!!.readText().lines()
+            .filter { it.isNotBlank() && !it.startsWith("#") }.map { it.split('\t') }.map { it[0] to it[1] }
+        var fixed = 0; var top3 = 0
+        val missed = ArrayList<String>()
+        for ((typo, word) in pairs) {
+            if (english.autocorrect(typo)?.equals(word, true) == true) fixed++ else if (missed.size < 60) missed += "$typo->${english.autocorrect(typo)}($word)"
+            if (english.suggest(typo).any { it.equals(word, true) }) top3++
+        }
+        val fixRate = fixed.toDouble() / pairs.size
+        val top3Rate = top3.toDouble() / pairs.size
+        println("misspellings: ${pairs.size} fixed=${"%.3f".format(fixRate)} top3=${"%.3f".format(top3Rate)}")
+        if (System.getenv("SHOW_MISSES") != null) println(missed)
+        assertTrue("misspelling fix rate $fixRate", fixRate >= MIN_MISSPELLING_FIX)
+        assertTrue("misspelling top-3 rate $top3Rate", top3Rate >= MIN_MISSPELLING_TOP3)
+    }
+
     @Test fun predictsCommonNextWords() {
         val cases = listOf(
             listOf("how", "are") to "you", listOf("i", "miss") to "you", listOf("thank") to "you",
@@ -144,5 +166,7 @@ class TypingQualityTest {
         // 1.7.0: fast fix 0.84, careful fix 0.90, break 0.000.
         const val MIN_FIX_RATE = 0.80
         const val MAX_BREAK_RATE = 0.003
+        const val MIN_MISSPELLING_FIX = 0.82
+        const val MIN_MISSPELLING_TOP3 = 0.89
     }
 }

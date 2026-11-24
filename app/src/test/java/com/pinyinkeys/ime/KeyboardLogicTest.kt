@@ -106,6 +106,39 @@ class KeyboardLogicTest {
         } finally { english.preferred = emptyMap() }
     }
 
+    @Test fun learnedFixesNeedTwoUses() {
+        val book = LearnedFixes()
+        book.record("drram", "dream", 100)
+        assertTrue(book.active().isEmpty())          // once: not yet
+        book.record("drram", "dream", 101)
+        assertEquals("dream", book.active()["drram"]) // twice: used
+        book.remove("drram")
+        assertTrue(book.active().isEmpty())
+    }
+
+    @Test fun learnedFixesFade() {
+        val book = LearnedFixes()
+        repeat(2) { book.record("tetx", "text", 100) }
+        book.fade(100 + LearnedFixes.FADE_DAYS)       // count 2 -> 1: no longer sure
+        assertTrue(book.active().isEmpty())
+        book.fade(100 + 2 * LearnedFixes.FADE_DAYS)   // 1 -> 0: gone
+        assertEquals(0, book.size)
+    }
+
+    @Test fun oldListIsCleanedUp() {
+        val book = LearnedFixes.fromLines(listOf("v\tso", "drram\tdream", "xq\tbanana"), 100) { t, f ->
+            english.isPlausibleFix(t, f)
+        }
+        assertEquals(setOf("drram"), book.active().keys)
+    }
+
+    @Test fun plausibleFixes() {
+        assertTrue(english.isPlausibleFix("drram", "dream"))
+        assertTrue(english.isPlausibleFix("someth", "something"))
+        assertTrue(!english.isPlausibleFix("v", "so"))
+        assertTrue(!english.isPlausibleFix("cat", "elephant"))
+    }
+
     @Test fun capitalI() {
         assertEquals("I'm", english.autocorrect("im"))
     }

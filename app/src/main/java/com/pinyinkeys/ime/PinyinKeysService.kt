@@ -682,14 +682,10 @@ class PinyinKeysService : InputMethodService(),
         ic.deleteSurroundingText(corrected.length + 1, 0)
         ic.commitText(original, 1)
         keepWord(original)  // you undid it, so don't correct this word again
-        setPreferred(original.lowercase(), null)
-        english?.let { d ->
-            if (original.lowercase() in d.learnedFixes) {
-                d.learnedFixes = d.learnedFixes - original.lowercase()
-                val lines = d.learnedFixes.map { "${it.key}\t${it.value}" }
-                lifecycleScope.launch(Dispatchers.IO) { Settings(this@PinyinKeysService).learnedFixes = lines }
-            }
-        }
+        // A wrong learned fix or pick: forget it.
+        fixBook.remove(original.lowercase())
+        pickBook.remove(original.lowercase())
+        saveFixes()
         currentWord = original
         updateSuggestions()
         return true
@@ -752,12 +748,19 @@ class PinyinKeysService : InputMethodService(),
                 if (english != null && nextWords != null && version == loadedLearnVersion) return@withContext
                 val dict = EnglishDictionary.get(this@PinyinKeysService)
                 dict.userWords = st.userWords.toSet()
-                dict.learnedFixes = st.learnedFixes.mapNotNull { l ->
-                    l.split('\t').takeIf { p -> p.size == 2 }?.let { p -> p[0] to p[1] }
-                }.toMap()
-                dict.preferred = st.preferredPicks.mapNotNull { l ->
-                    l.split('\t').takeIf { p -> p.size == 2 }?.let { p -> p[0] to p[1] }
-                }.toMap()
+                // Learned fixes and picks. Lists saved by older versions are cleaned up once:
+                // only believable fixes that autocorrect doesn't already make are kept.
+                val today = LearnedFixes.today()
+                fun worthKeeping(typo: String, fix: String) =
+                    dict.isPlausibleFix(typo, fix) && !dict.fixesOnItsOwn(typo, fix)
+                val fixes = LearnedFixes.fromLines(st.learnedFixes, today, ::worthKeeping)
+                val picks = LearnedFixes.fromLines(st.preferredPicks, today) { t, f -> dict.isPlausibleFix(t, f) }
+                val faded = fixes.fade(today) or picks.fade(today)
+                if (faded || fixes.lines() != st.learnedFixes) st.learnedFixes = fixes.lines()
+                if (faded || picks.lines() != st.preferredPicks) st.preferredPicks = picks.lines()
+                fixBook = fixes; pickBook = picks
+                dict.learnedFixes = fixes.active()
+                dict.preferred = picks.active()
                 dict.touchBias = st.touchBias.mapNotNull { l ->
                     val p = l.split('\t')
                     if (p.size == 3 && p[0].length == 1) p[0][0] to Touch(p[1].toFloat(), p[2].toFloat()) else null
@@ -793,12 +796,10 @@ class PinyinKeysService : InputMethodService(),
     /** Remember (or with null, forget) that you prefer [picked] when you type [typed]. */
     private fun setPreferred(typed: String, picked: String?) {
         val d = english ?: return
-        val updated = if (picked == null) d.preferred - typed
-            else (d.preferred - typed + (typed to picked)).entries.toList().takeLast(1000).associate { it.toPair() }
-        if (updated == d.preferred) return
-        d.preferred = updated
-        val lines = updated.map { "${it.key}\t${it.value}" }
-        lifecycleScope.launch(Dispatchers.IO) { Settings(this@PinyinKeysService).preferredPicks = lines }
+        if (picked == null) { pickBook.remove(typed); saveFixes(); return }
+        if (!d.isPlausibleFix(typed, picked)) return
+        pickBook.record(typed, picked, LearnedFixes.today())
+        saveFixes()
     }
 
     /** Words in the current message that aren't in the dictionary and weren't corrected. */
@@ -807,19 +808,15 @@ class PinyinKeysService : InputMethodService(),
     /** 9. Long-press a suggestion: forget everything learned about that word. */
     private fun forgetWord(word: String) {
         val w = word.removePrefix(LITERAL).lowercase()
-        english?.let { d ->
-            d.userWords = d.userWords - w
-            d.learnedFixes = d.learnedFixes.filter { (k, v) -> k != w && v != w }
-            d.preferred = d.preferred.filter { (k, v) -> k != w && v != w }
-        }
+        english?.let { d -> d.userWords = d.userWords - w }
+        fixBook.forget(w); pickBook.forget(w)
+        saveFixes()
         nextWords?.forget(w)
         val dict = english
         lifecycleScope.launch(Dispatchers.IO) {
             val st = Settings(this@PinyinKeysService)
             if (dict != null) {
                 st.userWords = dict.userWords.toList()
-                st.learnedFixes = dict.learnedFixes.map { "${it.key}\t${it.value}" }
-                st.preferredPicks = dict.preferred.map { "${it.key}\t${it.value}" }
             }
             nextWords?.save()
         }
@@ -838,9 +835,27 @@ class PinyinKeysService : InputMethodService(),
     /** Remember that you fix the typo [typo] to [fix]. Kept encrypted on the phone. */
     private fun learnFix(typo: String, fix: String) {
         val dict = english ?: return
-        dict.learnedFixes = (dict.learnedFixes + (typo to fix)).entries.toList().takeLast(1000).associate { it.toPair() }
-        val lines = dict.learnedFixes.map { "${it.key}\t${it.value}" }
-        lifecycleScope.launch(Dispatchers.IO) { Settings(this@PinyinKeysService).learnedFixes = lines }
+        // Only believable slips are learned, and only once you've made the same fix twice
+        // (see LearnedFixes); fixes autocorrect already makes aren't stored at all.
+        if (!dict.isPlausibleFix(typo, fix) || dict.fixesOnItsOwn(typo, fix)) return
+        fixBook.record(typo, fix, LearnedFixes.today())
+        saveFixes()
+    }
+
+    // Learned fixes and picks (see LearnedFixes.kt); loaded in loadLearning().
+    @Volatile private var fixBook = LearnedFixes()
+    @Volatile private var pickBook = LearnedFixes()
+
+    /** Pushes the books to autocorrect and saves them (encrypted, on the phone). */
+    private fun saveFixes() {
+        english?.let { d -> d.learnedFixes = fixBook.active(); d.preferred = pickBook.active() }
+        val fixes = fixBook.lines()
+        val picks = pickBook.lines()
+        lifecycleScope.launch(Dispatchers.IO) {
+            val st = Settings(this@PinyinKeysService)
+            st.learnedFixes = fixes
+            st.preferredPicks = picks
+        }
     }
 
     /** Remember [word] as a real word: suggested, and never autocorrected. */

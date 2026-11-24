@@ -3,6 +3,19 @@ A personal Android keyboard that shows Chinese and pinyin for the English you ty
 **Install:** download `pinyin-keys-<version>.apk` below, open it on the phone, then turn on
 Pinyin Keys in the system keyboard settings. Add your Claude API key in the Pinyin Keys app.
 
+## New in 1.8.0
+- Tidier app: a short menu (Setup, Translation, Typing, Look, Practice, Clipboard, What
+  I've learned, Saved sentences), each on its own page. Themes are a grid of previews,
+  key height is a 3-way switch, and the API URL/model are under "Advanced".
+- "What I've learned" has tabs (Fixes / Words), search, newest first, "Show more",
+  and "Clear this list".
+- Learned fixes are much stricter: a fix is only used after you've made it twice, unused
+  fixes fade after a couple of months, implausible ones (like "v → so") and ones
+  autocorrect already makes aren't kept, and undoing a fix forgets it. Your existing
+  list is cleaned up once when you update (it may take a few seconds the first time).
+- Fewer odd word splits ("absorbsion" no longer becomes "absorbs ion").
+- Autocorrect is now also checked against ~4,000 real common misspellings on every build.
+
 ## New in 1.7.0
 - Much better autocorrect (measured with a built-in typing test: fast, sloppy typing went
   from about 55% of typos fixed to 84%, with no correct words changed):
