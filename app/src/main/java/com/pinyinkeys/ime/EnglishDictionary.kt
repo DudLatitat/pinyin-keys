@@ -232,6 +232,52 @@ class EnglishDictionary private constructor(
     }
 
     /**
+     * Invisible key resizing: a tap near the edge between two keys becomes the letter that
+     * makes a more likely word. [prefix] is the word typed so far (lowercase letters),
+     * [typed] the key that was hit and [touch] where on it. A tap near the key's centre
+     * always stays that key; elsewhere the spot (how far from each key) and the words the
+     * letter would lead to are weighed together.
+     */
+    fun resolveTap(prefix: String, typed: Char, touch: Touch): Char {
+        val pos = KEY_POS[typed] ?: return typed
+        if (typed !in 'a'..'z' || prefix.any { it !in 'a'..'z' && it != '\'' }) return typed
+        val bias = touchBias[typed]
+        val x = pos.first + touch.dx - (bias?.dx ?: 0f)
+        val y = pos.second + touch.dy - (bias?.dy ?: 0f)
+        fun dist2(c: Char): Double {
+            val p = KEY_POS.getValue(c)
+            val dx = (x - p.first).toDouble(); val dy = ((y - p.second) * 0.85f).toDouble()
+            return dx * dx + dy * dy
+        }
+        if (dist2(typed) < CENTRE * CENTRE) return typed
+        fun score(c: Char) = -dist2(c) / (2 * TAP_SIGMA * TAP_SIGMA) + TAP_PRIOR * kotlin.math.ln(prefixMass(prefix + c) + 1e-3)
+        var best = typed
+        var bestScore = score(typed)
+        for (c in NEIGHBOURS[typed] ?: "") {
+            if (c !in 'a'..'z' || dist2(c) > 1.0) continue
+            val sc = score(c)
+            if (sc > bestScore + TAP_MARGIN) { best = c; bestScore = sc }
+        }
+        return best
+    }
+
+    // Cached "how much of the language starts with this?" (sum of word probabilities).
+    private val massCache = java.util.concurrent.ConcurrentHashMap<String, Double>()
+
+    private fun prefixMass(p: String): Double {
+        massCache[p]?.let { return it }
+        var sum = 0.0
+        var i = lowerBound(p)
+        var seen = 0
+        while (i < sorted.size && sorted[i].startsWith(p) && seen < 20000) {
+            sum += kotlin.math.exp(logP(sorted[i]) - 14.0); i++; seen++
+        }
+        if (massCache.size > 20000) massCache.clear()
+        massCache[p] = sum
+        return sum
+    }
+
+    /**
      * Is [fix] a believable correction of [typo] (worth learning)? It must be a real word
      * reachable by a couple of likely slips, or a completion of a few letters. Rules out
      * one-letter "typos" and unrelated swaps like "v" -> "so".
@@ -383,6 +429,13 @@ class EnglishDictionary private constructor(
         private const val MAX_LEARN_COST = 2.0
         /** How much the word-sequence model's context counts (see NgramModel). */
         private const val LM_WEIGHT = 1.0
+        /** Key resizing: taps this close to a key's centre (in key widths) always count. */
+        private const val CENTRE = 0.3
+        /** Key resizing: how far taps scatter (key widths), how much words count, and how
+         *  much better the other letter must be. */
+        private const val TAP_SIGMA = 0.35
+        private const val TAP_PRIOR = 0.5
+        private const val TAP_MARGIN = 1.5
         /** A real word you typed is kept unless a slip-away word is this much more likely. */
         private const val KEEP_BONUS = 1.0
         private const val REAL_WORD_MARGIN = 3.5

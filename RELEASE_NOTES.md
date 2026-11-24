@@ -3,6 +3,12 @@ A personal Android keyboard that shows Chinese and pinyin for the English you ty
 **Install:** download `pinyin-keys-<version>.apk` below, open it on the phone, then turn on
 Pinyin Keys in the system keyboard settings. Add your Claude API key in the Pinyin Keys app.
 
+## New in 1.10.0
+- Invisible key resizing: a tap near the edge between two keys becomes the letter that
+  makes a far more likely word (after "th", a tap between E and R gives E). A tap near the
+  middle of a key always gives that key. In the typing test this stops about a quarter of
+  fast-typing slips before they happen; words right overall: 98.1% careful, 92.1% fast.
+
 ## New in 1.9.0
 - Suggestion bar like Gboard's: the middle word is exactly what space will type, shown in
   bold accent colour when it will replace your word; what you typed is on the left in

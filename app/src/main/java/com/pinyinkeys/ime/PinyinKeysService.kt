@@ -539,13 +539,25 @@ class PinyinKeysService : InputMethodService(),
                 (c.isDigit() && currentWord.any { it.isLetter() } && currentWord.count { it.isDigit() } == 0))
         ) {
             // A letter: part of the current word. Update suggestions for it.
-            ic.commitText(text, 1)
+            // Invisible key resizing: a tap near the edge of a key may become the neighbour
+            // that makes a far more likely word (see EnglishDictionary.resolveTap).
+            var touch: Touch? = Touch(TouchTracker.dx, TouchTracker.dy)
+            var letter = c
+            val dict = english
+            if (dict != null && c.isLetter() && suggestionsAllowed() && Settings(this).autocorrect) {
+                val r = dict.resolveTap(currentWord.lowercase(), c.lowercaseChar(), touch!!)
+                if (r != c.lowercaseChar()) {
+                    letter = if (c.isUpperCase()) r.uppercaseChar() else r
+                    touch = null  // the offset was measured from the other key
+                }
+            }
+            ic.commitText(letter.toString(), 1)
             if (wordTouches.size != currentWord.length) {
                 wordTouches.clear(); repeat(currentWord.length) { wordTouches += null }
             }
-            wordTouches += Touch(TouchTracker.dx, TouchTracker.dy)
+            wordTouches += touch
             if (erasedWord == null) eraseStart = null
-            currentWord += c
+            currentWord += letter
             correctionNotice.value = null
             shiftAtLastLetter = shift.value
             if (shift.value == Shift.On) shift.value = Shift.Off

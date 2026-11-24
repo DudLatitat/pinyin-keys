@@ -19,8 +19,9 @@ class TypingQualityTest {
     private val lm by lazy {
         NgramModel.fromBuffer(java.nio.ByteBuffer.wrap(File("src/main/assets/en_lm.bin").readBytes()))!!
     }
-    /** Set to false to measure without the word-sequence model. */
+    /** Set to false to measure without the word-sequence model / key resizing. */
     var useLm = true
+    var useTapResolve = System.getenv("NO_TAP") == null
 
     private val next by lazy {
         NextWords(android.content.ContextWrapper(null)).apply {
@@ -83,6 +84,8 @@ class TypingQualityTest {
     data class Result(val typos: Int, val fixed: Int, val clean: Int, val broken: Int) {
         val fixRate get() = fixed.toDouble() / typos
         val breakRate get() = broken.toDouble() / clean
+        /** Share of all words that end up right (what you actually see). */
+        val accuracy get() = (clean - broken + fixed).toDouble() / (clean + typos)
     }
 
     /** Mistyped words that weren't fixed: typed -> result (meant). For tuning. */
@@ -95,7 +98,11 @@ class TypingQualityTest {
             for (s in sentences) {
                 val before = ArrayList<String>()
                 for (word in s.split(' ')) {
-                    val (typed, touches) = sloppy(word, rnd, scatter)
+                    val (raw, touches) = sloppy(word, rnd, scatter)
+                    // What the keyboard types, letter by letter, with key resizing.
+                    val typed = if (!useTapResolve) raw else buildString {
+                        raw.forEachIndexed { i, c -> append(touches[i]?.let { t -> english.resolveTap(toString(), c, t) } ?: c) }
+                    }
                     val ctx = before.toList()
                     val model = if (useLm) { w: String -> lm.contextBoost(w, ctx) } else null
                     val fix = english.autocorrect(typed, touches, next.boosts(ctx), lm = model) ?: typed
@@ -119,10 +126,10 @@ class TypingQualityTest {
     @Test fun autocorrectQuality() {
         val careful = measure(scatter = 0.28)
         val fast = measure(scatter = 0.4)
-        println("careful: $careful fix=${"%.3f".format(careful.fixRate)} break=${"%.3f".format(careful.breakRate)}")
+        println("careful: $careful fix=${"%.3f".format(careful.fixRate)} break=${"%.3f".format(careful.breakRate)} acc=${"%.4f".format(careful.accuracy)}")
         if (System.getenv("SHOW_MISSES") != null) misses.take(80).forEach(::println)
-        println("fast:    $fast fix=${"%.3f".format(fast.fixRate)} break=${"%.3f".format(fast.breakRate)}")
-        assertTrue("fixes too few typos: ${fast.fixRate}", fast.fixRate >= MIN_FIX_RATE)
+        println("fast:    $fast fix=${"%.3f".format(fast.fixRate)} break=${"%.3f".format(fast.breakRate)} acc=${"%.4f".format(fast.accuracy)}")
+        assertTrue("too few words right when typing fast: ${fast.accuracy}", fast.accuracy >= MIN_ACCURACY)
         assertTrue("changes too many correct words: ${careful.breakRate}", careful.breakRate <= MAX_BREAK_RATE)
     }
 
@@ -178,7 +185,7 @@ class TypingQualityTest {
         // Limits checked on every build (set a little below what the current version does).
         // Before 1.7.0 (old scoring): fast fix 0.55, careful break 0.003.
         // 1.7.0: fast fix 0.84, careful fix 0.90, break 0.000. 1.9.0 (context model): 0.87 / 0.93.
-        const val MIN_FIX_RATE = 0.84
+        const val MIN_ACCURACY = 0.915
         const val MAX_BREAK_RATE = 0.003
         const val MIN_MISSPELLING_FIX = 0.82
         const val MIN_MISSPELLING_TOP3 = 0.89
