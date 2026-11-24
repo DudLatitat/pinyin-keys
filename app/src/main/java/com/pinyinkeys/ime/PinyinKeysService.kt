@@ -717,18 +717,35 @@ class PinyinKeysService : InputMethodService(),
         // Boosts from the sentence so far and your own word habits (copied for the background thread).
         val boosts = nextWords?.boosts(sentence.toList()) ?: emptyMap()
         val touches = touchesForWord()
+        val autoOn = Settings(this).autocorrect
+        val lm = contextModel()
         suggestJob = lifecycleScope.launch {
             val list = withContext(Dispatchers.Default) {
-                val s = dict.suggest(word, boost = boosts, touches = touches)
-                // Not a known word: also offer exactly what was typed (shown in quotes), so
-                // it can be kept as-is instead of being "corrected".
-                if (word.length >= 2 && !dict.isWord(word)) {
+                val s = dict.suggest(word, boost = boosts, touches = touches, lm = lm)
+                // Like Gboard: the middle slot (first in the list) is exactly what space will
+                // type, marked when it will replace your word; what you typed is on the left
+                // in quotes (tap it to keep it), and another option on the right.
+                val auto = if (autoOn) dict.autocorrect(word, touches, boosts, lm = lm) else null
+                if (auto != null && auto != word) {
+                    val rest = s.filter { !it.equals(auto, ignoreCase = true) && !it.equals(word, ignoreCase = true) }
+                    listOfNotNull(AUTO + auto, LITERAL + word, rest.getOrNull(0))
+                } else if (word.length >= 2 && !dict.isWord(word)) {
                     val rest = s.filter { !it.equals(word, ignoreCase = true) }
                     listOfNotNull(rest.getOrNull(0), LITERAL + word, rest.getOrNull(1))
                 } else s
             }
             if (currentWord == word) suggestions.value = list
         }
+    }
+
+    /** Word-sequence model (see NgramModel.kt); null until loaded or if it can't be read. */
+    @Volatile private var ngrams: NgramModel? = null
+
+    /** "How well does this word fit after the last two words?" for autocorrect, or null. */
+    private fun contextModel(): ((String) -> Double)? {
+        val m = ngrams ?: return null
+        val before = sentence.toList()
+        return { w -> m.contextBoost(w, before) }
     }
 
     private var loadedLearnVersion = -1
@@ -768,6 +785,7 @@ class PinyinKeysService : InputMethodService(),
                 val nw = nextWords ?: NextWords(this@PinyinKeysService)
                 if (nextWords == null) nw.load() else nw.loadLearned()
                 english = dict
+                ngrams = NgramModel.get(this@PinyinKeysService)
                 nextWords = nw
                 loadedLearnVersion = version
             }
@@ -807,7 +825,7 @@ class PinyinKeysService : InputMethodService(),
 
     /** 9. Long-press a suggestion: forget everything learned about that word. */
     private fun forgetWord(word: String) {
-        val w = word.removePrefix(LITERAL).lowercase()
+        val w = word.removePrefix(LITERAL).removePrefix(AUTO).lowercase()
         english?.let { d -> d.userWords = d.userWords - w }
         fixBook.forget(w); pickBook.forget(w)
         saveFixes()
@@ -912,7 +930,7 @@ class PinyinKeysService : InputMethodService(),
             }
         }
         if (autocorrectOnly && Settings(this).autocorrect) {
-            val fix = english?.autocorrect(word, touches, nextWords?.boosts(sentence.toList()) ?: emptyMap())
+            val fix = english?.autocorrect(word, touches, nextWords?.boosts(sentence.toList()) ?: emptyMap(), lm = contextModel())
             if (fix != null && fix != word) {
                 markOwnEdit()
                 ic.deleteSurroundingText(word.length, 0)
@@ -969,7 +987,8 @@ class PinyinKeysService : InputMethodService(),
     private var lastOwnEditAt = 0L
     private fun markOwnEdit() { lastOwnEditAt = android.os.SystemClock.uptimeMillis() }
 
-    private fun pickSuggestion(picked: String) {
+    private fun pickSuggestion(pickedRaw: String) {
+        val picked = pickedRaw.removePrefix(AUTO)
         val ic = currentInputConnection ?: return
         markOwnEdit()
         val g = glided
@@ -1818,6 +1837,8 @@ class PinyinKeysService : InputMethodService(),
         private const val MAX_FIELD_CHARS = 10_000
         /** Marks the "keep exactly what I typed" suggestion. */
         const val LITERAL = "\u0001"
+        /** Marks the suggestion that space will put in place of your word (autocorrect). */
+        const val AUTO = "\u0002"
         /** In Chinese mode these keys type the full-width Chinese punctuation instead. */
         private val CHINESE_PUNCTUATION = mapOf(
             "," to "，", "." to "。", "?" to "？", "!" to "！", ":" to "：", ";" to "；",

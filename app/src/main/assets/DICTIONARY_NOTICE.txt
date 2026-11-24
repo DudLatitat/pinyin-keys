@@ -28,3 +28,6 @@ list itself is from LatinIME (above); built with tools/build_english_freqs.py.
 
 en_phrases.txt: next-word counts from Tatoeba English sentences (https://tatoeba.org),
 CC BY 2.0 FR; built with tools/build_phrase_table.py.
+
+en_lm.bin: counts of 1-, 2- and 3-word sequences from Tatoeba English sentences
+(https://tatoeba.org), CC BY 2.0 FR; built with tools/build_ngram_lm.py.

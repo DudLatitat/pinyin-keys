@@ -3,6 +3,16 @@ A personal Android keyboard that shows Chinese and pinyin for the English you ty
 **Install:** download `pinyin-keys-<version>.apk` below, open it on the phone, then turn on
 Pinyin Keys in the system keyboard settings. Add your Claude API key in the Pinyin Keys app.
 
+## New in 1.9.0
+- Suggestion bar like Gboard's: the middle word is exactly what space will type, shown in
+  bold accent colour when it will replace your word; what you typed is on the left in
+  quotes (tap to keep it), another option on the right.
+- Autocorrect understands context: a word-sequence model (built from ~2 million example
+  sentences, stored in the app and read in place, so it uses almost no memory) tells it
+  which word fits after the previous two. In the built-in typing test, typos fixed went
+  from 90% to 93% (careful) and 84% to 87% (fast), still with no correct words changed.
+  The app is about 14 MB bigger because of it.
+
 ## New in 1.8.0
 - Tidier app: a short menu (Setup, Translation, Typing, Look, Practice, Clipboard, What
   I've learned, Saved sentences), each on its own page. Themes are a grid of previews,

@@ -87,11 +87,12 @@ class EnglishDictionary private constructor(
         n: Int = 3,
         boost: Map<String, Double> = emptyMap(),
         touches: List<Touch?> = emptyList(),
+        lm: ((String) -> Double)? = null,
     ): List<String> {
         if (typed.isEmpty() || !isWordWithSlip(typed)) return emptyList()
         val lower = typed.lowercase()
         val scores = HashMap<String, Double>()
-        fun ctx(w: String) = boost[w] ?: 0.0
+        fun ctx(w: String) = (boost[w] ?: 0.0) + (lm?.invoke(w) ?: 0.0) * LM_WEIGHT
         fun consider(w: String, score: Double) {
             if (score > (scores[w] ?: Double.NEGATIVE_INFINITY)) scores[w] = score
         }
@@ -139,6 +140,7 @@ class EnglishDictionary private constructor(
         touches: List<Touch?> = emptyList(),
         boost: Map<String, Double> = emptyMap(),
         useLearned: Boolean = true,
+        lm: ((String) -> Double)? = null,
     ): String? {
         val lower = typed.lowercase()
         if (lower in userWords) return null
@@ -162,7 +164,7 @@ class EnglishDictionary private constructor(
         // "i'm", "i'll", "i've", "i'd" typed with the apostrophe: capital I.
         if (lower.startsWith("i'") && typed.startsWith("i") && lower in byLower) return "I" + typed.substring(1)
         if (lower.length < 2 || !isWordWithSlip(typed)) return null
-        fun ctx(w: String) = boost[w] ?: 0.0
+        fun ctx(w: String) = (boost[w] ?: 0.0) + (lm?.invoke(w) ?: 0.0) * LM_WEIGHT
         var best: String? = null
         var bestScore = Double.NEGATIVE_INFINITY
         var bestCost = 0.0
@@ -379,6 +381,8 @@ class EnglishDictionary private constructor(
         private const val MAX_FIX_COST = 1.6
         /** Fixes costlier than this aren't learned (too unlike a slip). */
         private const val MAX_LEARN_COST = 2.0
+        /** How much the word-sequence model's context counts (see NgramModel). */
+        private const val LM_WEIGHT = 1.0
         /** A real word you typed is kept unless a slip-away word is this much more likely. */
         private const val KEEP_BONUS = 1.0
         private const val REAL_WORD_MARGIN = 3.5

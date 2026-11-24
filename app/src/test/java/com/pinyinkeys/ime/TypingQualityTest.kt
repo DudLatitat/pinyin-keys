@@ -16,6 +16,12 @@ class TypingQualityTest {
     private val english by lazy {
         EnglishDictionary.fromLines(File("src/main/assets/en_words.txt").readLines().asSequence())
     }
+    private val lm by lazy {
+        NgramModel.fromBuffer(java.nio.ByteBuffer.wrap(File("src/main/assets/en_lm.bin").readBytes()))!!
+    }
+    /** Set to false to measure without the word-sequence model. */
+    var useLm = true
+
     private val next by lazy {
         NextWords(android.content.ContextWrapper(null)).apply {
             loadPhrases(File("src/main/assets/en_phrases.txt").readLines().asSequence())
@@ -90,7 +96,9 @@ class TypingQualityTest {
                 val before = ArrayList<String>()
                 for (word in s.split(' ')) {
                     val (typed, touches) = sloppy(word, rnd, scatter)
-                    val fix = english.autocorrect(typed, touches, next.boosts(before.toList())) ?: typed
+                    val ctx = before.toList()
+                    val model = if (useLm) { w: String -> lm.contextBoost(w, ctx) } else null
+                    val fix = english.autocorrect(typed, touches, next.boosts(ctx), lm = model) ?: typed
                     val ok = fix.equals(word, ignoreCase = true)
                     if (typed == word) { clean++; if (!ok) { broken++; misses += "BROKE $typed -> $fix" } }
                     else { typos++; if (ok) fixed++ else misses += "$typed -> $fix ($word)" }
@@ -100,6 +108,12 @@ class TypingQualityTest {
             }
         }
         return Result(typos, fixed, clean, broken)
+    }
+
+    @Test fun contextModel() {
+        // "from" fits after "a letter", "form" after "fill in the".
+        assertTrue(lm.contextBoost("from", listOf("letter")) > lm.contextBoost("form", listOf("letter")))
+        assertTrue(lm.contextBoost("form", listOf("the")) > 0.0 || lm.contextBoost("form", listOf("this")) > 0.0)
     }
 
     @Test fun autocorrectQuality() {
@@ -163,8 +177,8 @@ class TypingQualityTest {
     companion object {
         // Limits checked on every build (set a little below what the current version does).
         // Before 1.7.0 (old scoring): fast fix 0.55, careful break 0.003.
-        // 1.7.0: fast fix 0.84, careful fix 0.90, break 0.000.
-        const val MIN_FIX_RATE = 0.80
+        // 1.7.0: fast fix 0.84, careful fix 0.90, break 0.000. 1.9.0 (context model): 0.87 / 0.93.
+        const val MIN_FIX_RATE = 0.84
         const val MAX_BREAK_RATE = 0.003
         const val MIN_MISSPELLING_FIX = 0.82
         const val MIN_MISSPELLING_TOP3 = 0.89

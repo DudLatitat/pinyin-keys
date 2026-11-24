@@ -1094,10 +1094,13 @@ private fun SuggestionBar(words: List<String>, onTools: () -> Unit, onPick: (Str
                     label = "suggestion",
                 ) { word ->
                     // The "keep what I typed" option is shown in quotes.
+                    // The word space will put in (an autocorrect) is bold in the accent colour.
+                    val auto = word?.startsWith(PinyinKeysService.AUTO) == true
                     if (word != null) Text(
-                        if (word.startsWith(PinyinKeysService.LITERAL)) "\"${word.removePrefix(PinyinKeysService.LITERAL)}\"" else word,
-                        fontSize = 17.sp, color = kb.label, maxLines = 1,
-                        fontWeight = if (i == 1) FontWeight.SemiBold else FontWeight.Normal,
+                        if (word.startsWith(PinyinKeysService.LITERAL)) "\"${word.removePrefix(PinyinKeysService.LITERAL)}\""
+                        else word.removePrefix(PinyinKeysService.AUTO),
+                        fontSize = 17.sp, color = if (auto) kb.accent else kb.label, maxLines = 1,
+                        fontWeight = if (auto) FontWeight.Bold else if (i == 1) FontWeight.SemiBold else FontWeight.Normal,
                     )
                 }
             }

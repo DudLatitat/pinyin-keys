@@ -16,7 +16,7 @@ android {
         targetSdk = 35
         // versionCode must go up for every install-over-update: CI uses its run number.
         versionCode = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 2
-        versionName = "1.8.0"
+        versionName = "1.9.0"
     }
 
     // Release signing. The keystore and passwords come from GitHub Actions secrets via
@@ -47,6 +47,9 @@ android {
     }
     kotlinOptions { jvmTarget = "17" }
     buildFeatures { compose = true }
+    // Keep the word-sequence model uncompressed in the APK so it can be memory-mapped
+    // (read in place) instead of loaded into memory. See NgramModel.kt.
+    androidResources { noCompress += "bin" }
     // Unit tests run on the computer (not a phone); Android calls like Log just do nothing.
     testOptions { unitTests.isReturnDefaultValues = true }
 }
